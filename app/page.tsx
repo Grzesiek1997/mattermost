@@ -23,6 +23,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 // Import the ContactsManager component
 import { ContactsManager } from "@/components/contacts/contacts-manager"
+// Import the new component
+import { SupabaseConnectionTester } from "@/components/debug/supabase-connection-tester" // Add this line
 
 export default function Home() {
   const [currentUser, setCurrentUser] = useState<User | null>(null)
@@ -179,6 +181,9 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {/* Supabase Connection Tester - Add this line */}
+      <SupabaseConnectionTester />
     </div>
   )
 }
