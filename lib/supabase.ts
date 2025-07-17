@@ -23,9 +23,10 @@ if (isProd && (!supabaseUrl || !supabaseAnonKey)) {
 }
 
 // Public playground (read-only) – lets preview build start without crashing
-const FALLBACK_URL = "https://obkftjvrfpcumryromnh.supabase.co"
+// Zaktualizowane dane Supabase
+const FALLBACK_URL = "https://lojategvnzklpqkeutnf.supabase.co"
 const FALLBACK_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ia2Z0anZyZnBjdW1yeXJvbW5oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDk4MjU2MDAsImV4cCI6MjAyNTQwMTYwMH0.demo-key-for-preview"
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxojategvnzklpqkeutnfIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI3NTk3NDgsImV4cCI6MjA2ODMzNTc0OH0.J9n2Nh4g8dR4ExomtoA4jTo8lqfZQflhmnqjvR0JUfM"
 
 const finalUrl = supabaseUrl ?? FALLBACK_URL
 const finalKey = supabaseAnonKey ?? FALLBACK_KEY
