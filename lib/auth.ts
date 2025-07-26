@@ -2,15 +2,74 @@ import { supabase } from "./supabase"
 import type { User } from "./supabase"
 
 export class AuthService {
+  // Debug function to check auth status
+  static async debugAuth() {
+    try {
+      console.log("[AuthService] === DEBUG AUTH START ===")
+
+      // Check Supabase connection
+      const { data: connectionTest, error: connectionError } = await supabase
+        .from("users")
+        .select("count", { count: "exact", head: true })
+
+      console.log("[AuthService] Connection test:", {
+        success: !connectionError,
+        error: connectionError?.message,
+        count: connectionTest,
+      })
+
+      // Check current auth session
+      const { data: session, error: sessionError } = await supabase.auth.getSession()
+      console.log("[AuthService] Current session:", {
+        hasSession: !!session.session,
+        user: session.session?.user?.email,
+        error: sessionError?.message,
+      })
+
+      // Check auth user
+      const { data: authUser, error: authError } = await supabase.auth.getUser()
+      console.log("[AuthService] Auth user:", {
+        hasUser: !!authUser.user,
+        email: authUser.user?.email,
+        error: authError?.message,
+      })
+
+      // Run debug function
+      const { data: debugInfo, error: debugError } = await supabase.rpc("debug_auth_info")
+      console.log("[AuthService] Debug info:", debugInfo, debugError)
+
+      console.log("[AuthService] === DEBUG AUTH END ===")
+
+      return {
+        connection: !connectionError,
+        session: !!session.session,
+        user: !!authUser.user,
+        debugInfo,
+      }
+    } catch (error) {
+      console.error("[AuthService] Debug failed:", error)
+      return { error: error.message }
+    }
+  }
+
   static async signUp(email: string, password: string, userData: Partial<User>) {
-    console.log("[AuthService] signUp called with:", { email, hasPassword: !!password })
+    console.log("[AuthService] === SIGNUP START ===")
+    console.log("[AuthService] Email:", email)
+    console.log("[AuthService] Has password:", !!password)
+    console.log("[AuthService] User data:", userData)
 
     try {
-      console.log("[AuthService] Attempting Supabase signup...")
+      // Normalize email
+      const normalizedEmail = email.trim().toLowerCase()
+      console.log("[AuthService] Normalized email:", normalizedEmail)
+
+      // First, run debug to check system status
+      await this.debugAuth()
 
       // Create auth user
+      console.log("[AuthService] Creating auth user...")
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
+        email: normalizedEmail,
         password,
         options: {
           data: {
@@ -21,57 +80,97 @@ export class AuthService {
       })
 
       if (authError) {
-        console.error("[AuthService] Supabase signup error:", authError)
-        throw authError
+        console.error("[AuthService] Auth signup error:", authError)
+        throw new Error(`Signup failed: ${authError.message}`)
       }
 
       if (!authData.user) {
         throw new Error("No user returned from signup")
       }
 
-      console.log("[AuthService] Auth user created:", authData.user.id)
+      console.log("[AuthService] Auth user created:", {
+        id: authData.user.id,
+        email: authData.user.email,
+        confirmed: authData.user.email_confirmed_at,
+      })
 
       // Create user profile
-      const { error: profileError } = await supabase.from("users").insert({
+      console.log("[AuthService] Creating user profile...")
+      const profileData = {
         id: authData.user.id,
-        email: authData.user.email!,
-        username: userData.username,
-        full_name: userData.full_name,
-        bio: userData.bio,
-        avatar_url: userData.avatar_url,
-        phone: userData.phone,
+        email: normalizedEmail,
+        username: userData.username || normalizedEmail.split("@")[0],
+        full_name: userData.full_name || "User",
+        bio: userData.bio || null,
+        avatar_url: userData.avatar_url || null,
+        phone: userData.phone || null,
         is_online: true,
         last_seen: new Date().toISOString(),
-      })
+      }
+
+      const { data: profile, error: profileError } = await supabase.from("users").insert(profileData).select().single()
 
       if (profileError) {
         console.error("[AuthService] Profile creation error:", profileError)
-        // Try to clean up auth user if profile creation fails
-        await supabase.auth.signOut()
-        throw profileError
+        // Try to clean up auth user
+        try {
+          await supabase.auth.signOut()
+        } catch (cleanupError) {
+          console.warn("[AuthService] Cleanup failed:", cleanupError)
+        }
+        throw new Error(`Profile creation failed: ${profileError.message}`)
       }
 
-      console.log("[AuthService] ✅ Signup successful for:", email)
-      return authData
+      console.log("[AuthService] Profile created:", profile)
+      console.log("[AuthService] === SIGNUP SUCCESS ===")
+
+      return { user: authData.user, profile }
     } catch (error: any) {
-      console.error("[AuthService] Signup failed:", error)
+      console.error("[AuthService] === SIGNUP FAILED ===")
+      console.error("[AuthService] Error:", error)
       throw error
     }
   }
 
   static async signIn(email: string, password: string) {
-    console.log("[AuthService] signIn called with:", { email, hasPassword: !!password })
+    console.log("[AuthService] === SIGNIN START ===")
+    console.log("[AuthService] Email:", email)
+    console.log("[AuthService] Has password:", !!password)
 
     try {
-      console.log("[AuthService] Attempting Supabase signin...")
+      // Normalize email
+      const normalizedEmail = email.trim().toLowerCase()
+      console.log("[AuthService] Normalized email:", normalizedEmail)
 
+      // Run debug first
+      await this.debugAuth()
+
+      // Attempt signin
+      console.log("[AuthService] Attempting signin...")
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim().toLowerCase(),
+        email: normalizedEmail,
         password,
       })
 
       if (error) {
-        console.error("[AuthService] Supabase signin error:", error)
+        console.error("[AuthService] Signin error:", error)
+
+        // If user doesn't exist, suggest signup
+        if (error.message.includes("Invalid login credentials")) {
+          // Check if user exists in our users table
+          const { data: existingUser } = await supabase
+            .from("users")
+            .select("email")
+            .eq("email", normalizedEmail)
+            .single()
+
+          if (!existingUser) {
+            throw new Error(`No account found for ${normalizedEmail}. Please sign up first.`)
+          } else {
+            throw new Error(`Invalid password for ${normalizedEmail}. Please check your password.`)
+          }
+        }
+
         throw error
       }
 
@@ -79,35 +178,71 @@ export class AuthService {
         throw new Error("No user returned from signin")
       }
 
-      console.log("[AuthService] Auth successful for:", data.user.email)
+      console.log("[AuthService] Auth signin successful:", {
+        id: data.user.id,
+        email: data.user.email,
+      })
+
+      // Get or create user profile
+      console.log("[AuthService] Getting user profile...")
+      let { data: profile, error: profileError } = await supabase
+        .from("users")
+        .select("*")
+        .eq("id", data.user.id)
+        .single()
+
+      if (profileError && profileError.code === "PGRST116") {
+        // Profile doesn't exist, create it
+        console.log("[AuthService] Creating missing profile...")
+        const { data: newProfile, error: createError } = await supabase
+          .from("users")
+          .insert({
+            id: data.user.id,
+            email: normalizedEmail,
+            username: data.user.user_metadata?.username || normalizedEmail.split("@")[0],
+            full_name: data.user.user_metadata?.full_name || "User",
+            is_online: true,
+            last_seen: new Date().toISOString(),
+          })
+          .select()
+          .single()
+
+        if (createError) {
+          console.error("[AuthService] Profile creation failed:", createError)
+          throw new Error(`Failed to create profile: ${createError.message}`)
+        }
+
+        profile = newProfile
+      } else if (profileError) {
+        console.error("[AuthService] Profile fetch error:", profileError)
+        throw new Error(`Failed to get profile: ${profileError.message}`)
+      }
 
       // Update online status
+      console.log("[AuthService] Updating online status...")
       try {
-        const { error: updateError } = await supabase
+        await supabase
           .from("users")
           .update({
             is_online: true,
             last_seen: new Date().toISOString(),
           })
           .eq("id", data.user.id)
-
-        if (updateError) {
-          console.warn("[AuthService] Failed to update online status:", updateError)
-        }
       } catch (updateError) {
         console.warn("[AuthService] Online status update failed:", updateError)
       }
 
-      console.log("[AuthService] ✅ Signin successful")
-      return data
+      console.log("[AuthService] === SIGNIN SUCCESS ===")
+      return { user: data.user, profile }
     } catch (error: any) {
-      console.error("[AuthService] Signin failed:", error)
+      console.error("[AuthService] === SIGNIN FAILED ===")
+      console.error("[AuthService] Error:", error)
       throw error
     }
   }
 
   static async signOut() {
-    console.log("[AuthService] signOut called")
+    console.log("[AuthService] === SIGNOUT START ===")
 
     try {
       // Get current user before signing out
@@ -116,8 +251,8 @@ export class AuthService {
       } = await supabase.auth.getUser()
 
       if (user) {
+        console.log("[AuthService] Updating offline status for:", user.email)
         try {
-          // Update offline status
           await supabase
             .from("users")
             .update({
@@ -126,26 +261,27 @@ export class AuthService {
             })
             .eq("id", user.id)
         } catch (updateError) {
-          console.warn("[AuthService] Failed to update offline status:", updateError)
+          console.warn("[AuthService] Offline status update failed:", updateError)
         }
       }
 
-      // Sign out from Supabase
+      // Sign out
       const { error } = await supabase.auth.signOut()
       if (error) {
         console.error("[AuthService] Signout error:", error)
         throw error
       }
 
-      console.log("[AuthService] ✅ Signout successful")
+      console.log("[AuthService] === SIGNOUT SUCCESS ===")
     } catch (error) {
-      console.error("[AuthService] Signout error:", error)
+      console.error("[AuthService] === SIGNOUT FAILED ===")
+      console.error("[AuthService] Error:", error)
       throw error
     }
   }
 
   static async getCurrentUser(): Promise<User | null> {
-    console.log("[AuthService] getCurrentUser called")
+    console.log("[AuthService] === GET CURRENT USER START ===")
 
     try {
       // Get authenticated user
@@ -174,46 +310,21 @@ export class AuthService {
         .single()
 
       if (profileError) {
-        console.error("[AuthService] Error fetching user profile:", profileError)
-
-        // If profile doesn't exist, create it
-        if (profileError.code === "PGRST116") {
-          console.log("[AuthService] Creating missing profile for:", authUser.email)
-
-          const { data: newProfile, error: createError } = await supabase
-            .from("users")
-            .insert({
-              id: authUser.id,
-              email: authUser.email!,
-              username: authUser.user_metadata?.username || authUser.email!.split("@")[0],
-              full_name: authUser.user_metadata?.full_name || "User",
-              is_online: true,
-              last_seen: new Date().toISOString(),
-            })
-            .select()
-            .single()
-
-          if (createError) {
-            console.error("[AuthService] Failed to create profile:", createError)
-            return null
-          }
-
-          return newProfile
-        }
-
+        console.error("[AuthService] Profile fetch error:", profileError)
         return null
       }
 
-      console.log("[AuthService] ✅ User profile fetched successfully")
+      console.log("[AuthService] === GET CURRENT USER SUCCESS ===")
       return profile
     } catch (error) {
-      console.error("[AuthService] getCurrentUser error:", error)
+      console.error("[AuthService] === GET CURRENT USER FAILED ===")
+      console.error("[AuthService] Error:", error)
       return null
     }
   }
 
   static async updateProfile(userId: string, updates: Partial<User>) {
-    console.log("[AuthService] updateProfile called for:", userId)
+    console.log("[AuthService] Updating profile for:", userId)
 
     try {
       const { data, error } = await supabase
@@ -231,15 +342,15 @@ export class AuthService {
         throw error
       }
 
-      console.log("[AuthService] ✅ Profile updated successfully")
+      console.log("[AuthService] Profile updated successfully")
       return data
     } catch (error: any) {
-      console.error("[AuthService] updateProfile failed:", error)
+      console.error("[AuthService] Profile update failed:", error)
       throw error
     }
   }
 
-  // Check if user is admin
+  // Admin functions
   static async isAdmin(userId?: string): Promise<boolean> {
     try {
       const { data, error } = await supabase.rpc("is_admin", {
@@ -258,7 +369,6 @@ export class AuthService {
     }
   }
 
-  // Get admin role
   static async getAdminRole(userId?: string): Promise<string> {
     try {
       const { data, error } = await supabase.rpc("get_admin_role", {
@@ -274,6 +384,43 @@ export class AuthService {
     } catch (error) {
       console.error("[AuthService] Admin role check failed:", error)
       return "user"
+    }
+  }
+
+  // Create first super admin (only works if no admins exist)
+  static async createFirstSuperAdmin(): Promise<string> {
+    try {
+      const { data, error } = await supabase.rpc("create_first_super_admin")
+
+      if (error) {
+        console.error("[AuthService] Create first super admin error:", error)
+        throw error
+      }
+
+      return data
+    } catch (error: any) {
+      console.error("[AuthService] Create first super admin failed:", error)
+      throw error
+    }
+  }
+
+  // Promote user to admin (only super admins can do this)
+  static async promoteUserToAdmin(email: string, role = "admin"): Promise<string> {
+    try {
+      const { data, error } = await supabase.rpc("promote_user_to_admin", {
+        target_email: email,
+        admin_role: role,
+      })
+
+      if (error) {
+        console.error("[AuthService] Promote user error:", error)
+        throw error
+      }
+
+      return data
+    } catch (error: any) {
+      console.error("[AuthService] Promote user failed:", error)
+      throw error
     }
   }
 }

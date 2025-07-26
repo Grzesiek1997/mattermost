@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,7 +11,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AuthService } from "@/lib/auth"
 import { SUPABASE_READY } from "@/lib/supabase"
 import { toast } from "@/hooks/use-toast"
-import { Info } from "lucide-react"
+import { Info, AlertTriangle, TestTube } from "lucide-react"
 
 interface AuthFormProps {
   onAuthSuccess: () => void
@@ -27,9 +26,32 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
     username: "",
     fullName: "",
   })
+  const [debugMode, setDebugMode] = useState(false)
+  const [debugInfo, setDebugInfo] = useState<any>(null)
+
+  const runDebug = async () => {
+    try {
+      setDebugMode(true)
+      const info = await AuthService.debugAuth()
+      setDebugInfo(info)
+      console.log("Debug info:", info)
+    } catch (error) {
+      console.error("Debug failed:", error)
+    }
+  }
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (!signInData.email.trim() || !signInData.password.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter both email and password",
+        variant: "destructive",
+      })
+      return
+    }
+
     setIsLoading(true)
 
     try {
@@ -38,16 +60,24 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
 
       toast({
         title: "Welcome back!",
-        description: SUPABASE_READY
-          ? "You have been signed in successfully."
-          : "Signed in with demo mode - your data won't persist.",
+        description: `Signed in as ${signInData.email}`,
       })
       onAuthSuccess()
     } catch (error: any) {
       console.error("[AuthForm] Signin error:", error)
+
+      let errorMessage = error.message || "An unexpected error occurred"
+
+      // Provide helpful error messages
+      if (errorMessage.includes("Invalid login credentials")) {
+        errorMessage = "Invalid email or password. Please check your credentials and try again."
+      } else if (errorMessage.includes("Email not confirmed")) {
+        errorMessage = "Please check your email and click the confirmation link before signing in."
+      }
+
       toast({
         title: "Sign in failed",
-        description: error.message || "An unexpected error occurred. Please try again.",
+        description: errorMessage,
         variant: "destructive",
       })
     } finally {
@@ -57,6 +87,25 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (!signUpData.email.trim() || !signUpData.password.trim() || !signUpData.username.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (signUpData.password.length < 6) {
+      toast({
+        title: "Validation Error",
+        description: "Password must be at least 6 characters long",
+        variant: "destructive",
+      })
+      return
+    }
+
     setIsLoading(true)
 
     try {
@@ -68,16 +117,24 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
 
       toast({
         title: "Account created!",
-        description: SUPABASE_READY
-          ? "Your account has been created successfully."
-          : "Account created in demo mode - your data won't persist.",
+        description: `Welcome ${signUpData.fullName || signUpData.username}!`,
       })
       onAuthSuccess()
     } catch (error: any) {
       console.error("[AuthForm] Signup error:", error)
+
+      let errorMessage = error.message || "An unexpected error occurred"
+
+      // Provide helpful error messages
+      if (errorMessage.includes("User already registered")) {
+        errorMessage = "An account with this email already exists. Please sign in instead."
+      } else if (errorMessage.includes("Password should be at least 6 characters")) {
+        errorMessage = "Password must be at least 6 characters long."
+      }
+
       toast({
         title: "Sign up failed",
-        description: error.message || "An unexpected error occurred. Please try again.",
+        description: errorMessage,
         variant: "destructive",
       })
     } finally {
@@ -85,22 +142,29 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
     }
   }
 
-  const handleDemoLogin = async () => {
-    setSignInData({ email: "demo@example.com", password: "demo123" })
+  const handleTestAccount = async () => {
     setIsLoading(true)
 
     try {
-      await AuthService.signIn("demo@example.com", "demo123")
+      // Try to sign up with a test account
+      const testEmail = `test-${Date.now()}@example.com`
+      const testPassword = "test123456"
+
+      await AuthService.signUp(testEmail, testPassword, {
+        username: `testuser${Date.now()}`,
+        full_name: "Test User",
+      })
+
       toast({
-        title: "Demo mode activated!",
-        description: "You're now using the app in demo mode. Data won't persist.",
+        title: "Test account created!",
+        description: `Created and signed in as ${testEmail}`,
       })
       onAuthSuccess()
     } catch (error: any) {
-      console.error("[AuthForm] Demo login error:", error)
+      console.error("[AuthForm] Test account error:", error)
       toast({
-        title: "Demo login failed",
-        description: "Please try again or contact support.",
+        title: "Test account failed",
+        description: error.message,
         variant: "destructive",
       })
     } finally {
@@ -118,8 +182,10 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
         <CardContent className="space-y-4">
           {!SUPABASE_READY && (
             <Alert>
-              <Info className="h-4 w-4" />
-              <AlertDescription>Running in demo mode. Your data won't be saved permanently.</AlertDescription>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Warning:</strong> Supabase connection not configured. Some features may not work.
+              </AlertDescription>
             </Alert>
           )}
 
@@ -140,6 +206,7 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
                     value={signInData.email}
                     onChange={(e) => setSignInData((prev) => ({ ...prev, email: e.target.value }))}
                     required
+                    disabled={isLoading}
                   />
                 </div>
                 <div className="space-y-2">
@@ -151,38 +218,19 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
                     value={signInData.password}
                     onChange={(e) => setSignInData((prev) => ({ ...prev, password: e.target.value }))}
                     required
+                    disabled={isLoading}
                   />
                 </div>
                 <Button type="submit" className="w-full" disabled={isLoading}>
                   {isLoading ? "Signing in..." : "Sign In"}
                 </Button>
               </form>
-
-              <div className="mt-4">
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center">
-                    <span className="w-full border-t" />
-                  </div>
-                  <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-white px-2 text-muted-foreground">Or</span>
-                  </div>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full mt-4 bg-transparent"
-                  onClick={handleDemoLogin}
-                  disabled={isLoading}
-                >
-                  Try Demo Mode
-                </Button>
-              </div>
             </TabsContent>
 
             <TabsContent value="signup">
               <form onSubmit={handleSignUp} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="signup-email">Email</Label>
+                  <Label htmlFor="signup-email">Email *</Label>
                   <Input
                     id="signup-email"
                     type="email"
@@ -190,10 +238,11 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
                     value={signUpData.email}
                     onChange={(e) => setSignUpData((prev) => ({ ...prev, email: e.target.value }))}
                     required
+                    disabled={isLoading}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="signup-username">Username</Label>
+                  <Label htmlFor="signup-username">Username *</Label>
                   <Input
                     id="signup-username"
                     type="text"
@@ -201,6 +250,7 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
                     value={signUpData.username}
                     onChange={(e) => setSignUpData((prev) => ({ ...prev, username: e.target.value }))}
                     required
+                    disabled={isLoading}
                   />
                 </div>
                 <div className="space-y-2">
@@ -211,18 +261,20 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
                     placeholder="Enter your full name"
                     value={signUpData.fullName}
                     onChange={(e) => setSignUpData((prev) => ({ ...prev, fullName: e.target.value }))}
-                    required
+                    disabled={isLoading}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="signup-password">Password</Label>
+                  <Label htmlFor="signup-password">Password *</Label>
                   <Input
                     id="signup-password"
                     type="password"
-                    placeholder="Create a password"
+                    placeholder="Create a password (min 6 characters)"
                     value={signUpData.password}
                     onChange={(e) => setSignUpData((prev) => ({ ...prev, password: e.target.value }))}
                     required
+                    disabled={isLoading}
+                    minLength={6}
                   />
                 </div>
                 <Button type="submit" className="w-full" disabled={isLoading}>
@@ -231,6 +283,39 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
               </form>
             </TabsContent>
           </Tabs>
+
+          <div className="space-y-2">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-white px-2 text-muted-foreground">Quick Actions</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={handleTestAccount} disabled={isLoading}>
+                Create Test Account
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={runDebug} disabled={isLoading}>
+                <TestTube className="h-4 w-4 mr-1" />
+                Debug
+              </Button>
+            </div>
+          </div>
+
+          {debugMode && debugInfo && (
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Debug Info:</strong>
+                <pre className="text-xs mt-2 bg-gray-100 p-2 rounded overflow-auto">
+                  {JSON.stringify(debugInfo, null, 2)}
+                </pre>
+              </AlertDescription>
+            </Alert>
+          )}
         </CardContent>
       </Card>
     </div>
