@@ -11,7 +11,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AuthService } from "@/lib/auth"
 import { SUPABASE_READY } from "@/lib/supabase"
 import { toast } from "@/hooks/use-toast"
-import { Info, AlertTriangle, TestTube } from "lucide-react"
+import { Info, AlertTriangle, TestTube, CheckCircle, XCircle } from "lucide-react"
 
 interface AuthFormProps {
   onAuthSuccess: () => void
@@ -32,11 +32,25 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
   const runDebug = async () => {
     try {
       setDebugMode(true)
+      setIsLoading(true)
+      console.log("Running comprehensive debug...")
+
       const info = await AuthService.debugAuth()
       setDebugInfo(info)
-      console.log("Debug info:", info)
+
+      toast({
+        title: "Debug Complete",
+        description: "Check console and debug info below for details",
+      })
     } catch (error) {
       console.error("Debug failed:", error)
+      toast({
+        title: "Debug Failed",
+        description: error.message,
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -91,7 +105,7 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
     if (!signUpData.email.trim() || !signUpData.password.trim() || !signUpData.username.trim()) {
       toast({
         title: "Validation Error",
-        description: "Please fill in all required fields",
+        description: "Please fill in all required fields (email, username, password)",
         variant: "destructive",
       })
       return
@@ -106,18 +120,28 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
       return
     }
 
+    // Basic username validation
+    if (!/^[a-zA-Z0-9_]+$/.test(signUpData.username)) {
+      toast({
+        title: "Validation Error",
+        description: "Username can only contain letters, numbers, and underscores",
+        variant: "destructive",
+      })
+      return
+    }
+
     setIsLoading(true)
 
     try {
       console.log("[AuthForm] Attempting signup...")
       await AuthService.signUp(signUpData.email, signUpData.password, {
         username: signUpData.username,
-        full_name: signUpData.fullName,
+        full_name: signUpData.fullName || signUpData.username,
       })
 
       toast({
         title: "Account created!",
-        description: `Welcome ${signUpData.fullName || signUpData.username}!`,
+        description: `Welcome ${signUpData.fullName || signUpData.username}! You are now signed in.`,
       })
       onAuthSuccess()
     } catch (error: any) {
@@ -130,6 +154,8 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
         errorMessage = "An account with this email already exists. Please sign in instead."
       } else if (errorMessage.includes("Password should be at least 6 characters")) {
         errorMessage = "Password must be at least 6 characters long."
+      } else if (errorMessage.includes("row-level security")) {
+        errorMessage = "Account creation temporarily blocked. Please try again in a moment or contact support."
       }
 
       toast({
@@ -147,11 +173,15 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
 
     try {
       // Try to sign up with a test account
-      const testEmail = `test-${Date.now()}@example.com`
+      const timestamp = Date.now()
+      const testEmail = `test${timestamp}@example.com`
       const testPassword = "test123456"
+      const testUsername = `testuser${timestamp}`
+
+      console.log("[AuthForm] Creating test account:", { testEmail, testUsername })
 
       await AuthService.signUp(testEmail, testPassword, {
-        username: `testuser${Date.now()}`,
+        username: testUsername,
         full_name: "Test User",
       })
 
@@ -170,6 +200,12 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const getDebugStatusIcon = (status: boolean | undefined) => {
+    if (status === true) return <CheckCircle className="h-4 w-4 text-green-500" />
+    if (status === false) return <XCircle className="h-4 w-4 text-red-500" />
+    return <AlertTriangle className="h-4 w-4 text-yellow-500" />
   }
 
   return (
@@ -246,11 +282,12 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
                   <Input
                     id="signup-username"
                     type="text"
-                    placeholder="Choose a username"
+                    placeholder="Choose a username (letters, numbers, _)"
                     value={signUpData.username}
                     onChange={(e) => setSignUpData((prev) => ({ ...prev, username: e.target.value }))}
                     required
                     disabled={isLoading}
+                    pattern="[a-zA-Z0-9_]+"
                   />
                 </div>
                 <div className="space-y-2">
@@ -258,7 +295,7 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
                   <Input
                     id="signup-fullname"
                     type="text"
-                    placeholder="Enter your full name"
+                    placeholder="Enter your full name (optional)"
                     value={signUpData.fullName}
                     onChange={(e) => setSignUpData((prev) => ({ ...prev, fullName: e.target.value }))}
                     disabled={isLoading}
@@ -300,7 +337,7 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
               </Button>
               <Button type="button" variant="outline" size="sm" onClick={runDebug} disabled={isLoading}>
                 <TestTube className="h-4 w-4 mr-1" />
-                Debug
+                Debug System
               </Button>
             </div>
           </div>
@@ -309,10 +346,33 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
             <Alert>
               <Info className="h-4 w-4" />
               <AlertDescription>
-                <strong>Debug Info:</strong>
-                <pre className="text-xs mt-2 bg-gray-100 p-2 rounded overflow-auto">
-                  {JSON.stringify(debugInfo, null, 2)}
-                </pre>
+                <div className="space-y-2">
+                  <strong>System Status:</strong>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="flex items-center gap-1">
+                      {getDebugStatusIcon(debugInfo.connection)}
+                      <span>Database</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {getDebugStatusIcon(debugInfo.session)}
+                      <span>Session</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {getDebugStatusIcon(debugInfo.user)}
+                      <span>Auth User</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {getDebugStatusIcon(SUPABASE_READY)}
+                      <span>Supabase</span>
+                    </div>
+                  </div>
+                  <details className="mt-2">
+                    <summary className="text-xs cursor-pointer">Show detailed debug info</summary>
+                    <pre className="text-xs mt-2 bg-gray-100 p-2 rounded overflow-auto max-h-32">
+                      {JSON.stringify(debugInfo, null, 2)}
+                    </pre>
+                  </details>
+                </div>
               </AlertDescription>
             </Alert>
           )}
