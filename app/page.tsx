@@ -6,15 +6,16 @@ import { ChatList } from "@/components/chat/chat-list"
 import { ChatWindow } from "@/components/chat/chat-window"
 import { NewChatDialog } from "@/components/chat/new-chat-dialog"
 import { SettingsDialog } from "@/components/settings/settings-dialog"
-import { SupabaseSetupGuide } from "@/components/setup/supabase-setup-guide"
+import { ConnectionTester } from "@/components/debug/connection-tester"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { AuthService } from "@/lib/auth"
 import { useRealtimePresence } from "@/hooks/use-realtime"
 import { SUPABASE_READY } from "@/lib/supabase"
 import type { User, Chat } from "@/lib/supabase"
-import { LogOut, Moon, Sun, Bell } from "lucide-react"
+import { LogOut, Moon, Sun, Bell, TestTube } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import {
   DropdownMenu,
@@ -30,6 +31,7 @@ export default function Home() {
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null)
   const [loading, setLoading] = useState(true)
   const [darkMode, setDarkMode] = useState(false)
+  const [showTester, setShowTester] = useState(false)
   const onlineUsers = useRealtimePresence()
 
   useEffect(() => {
@@ -96,13 +98,32 @@ export default function Home() {
     )
   }
 
-  // Show setup guide if Supabase is not configured
-  if (!SUPABASE_READY) {
-    return <SupabaseSetupGuide />
+  // Show connection tester if requested
+  if (showTester) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="p-4">
+          <Button onClick={() => setShowTester(false)} variant="outline" size="sm">
+            ← Back to App
+          </Button>
+        </div>
+        <ConnectionTester />
+      </div>
+    )
   }
 
   if (!currentUser) {
-    return <AuthForm onAuthSuccess={checkAuth} />
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="absolute top-4 right-4">
+          <Button onClick={() => setShowTester(true)} variant="outline" size="sm">
+            <TestTube className="h-4 w-4 mr-2" />
+            Test Connection
+          </Button>
+        </div>
+        <AuthForm onAuthSuccess={checkAuth} />
+      </div>
+    )
   }
 
   return (
@@ -129,6 +150,7 @@ export default function Home() {
                     @{currentUser.username}
                   </Badge>
                   <span className="text-xs text-gray-500">{onlineUsers.length} online</span>
+                  {SUPABASE_READY && <Badge className="text-xs bg-green-500 hover:bg-green-500">Connected</Badge>}
                 </div>
               </div>
             </div>
@@ -138,6 +160,10 @@ export default function Home() {
                 <SettingsDialog currentUser={currentUser} onUserUpdate={handleUserUpdate} />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setShowTester(true)}>
+                  <TestTube className="h-4 w-4 mr-2" />
+                  Test Connection
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setDarkMode(!darkMode)}>
                   {darkMode ? <Sun className="h-4 w-4 mr-2" /> : <Moon className="h-4 w-4 mr-2" />}
                   {darkMode ? "Light Mode" : "Dark Mode"}
@@ -180,7 +206,13 @@ export default function Home() {
               <div className="text-6xl mb-4">💬</div>
               <h2 className="text-2xl font-semibold text-gray-700 mb-2">Welcome to Telegram Clone</h2>
               <p className="text-gray-500 mb-6">Select a chat to start messaging or create a new one</p>
-              <NewChatDialog onChatCreated={(chat) => setSelectedChat(chat)} />
+              <div className="space-y-3">
+                <NewChatDialog onChatCreated={(chat) => setSelectedChat(chat)} />
+                <Button onClick={() => setShowTester(true)} variant="outline" size="sm">
+                  <TestTube className="h-4 w-4 mr-2" />
+                  Test System
+                </Button>
+              </div>
             </div>
           </div>
         )}

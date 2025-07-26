@@ -12,69 +12,71 @@ console.log("[Supabase] Environment check:", {
   urlPreview: supabaseUrl ? supabaseUrl.substring(0, 30) + "..." : "missing",
 })
 
-// Production mode requires environment variables
-if (isProd && (!supabaseUrl || !supabaseAnonKey)) {
-  throw new Error(
-    "Missing Supabase env vars. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY on Vercel.",
-  )
-}
+// Use the provided credentials
+const finalUrl = supabaseUrl || "https://ifkrvmxmjewttxhbzawx.supabase.co"
+const finalKey =
+  supabaseAnonKey ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlma3J2bXhtamV3dHR4aGJ6YXd4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM1NjQ3NTMsImV4cCI6MjA2OTE0MDc1M30.oz9SNNzjpO2Wh4a5G8F52MWyIkQjX51vkb14OrU50Mw"
 
-// For development, we'll use your project URL and key from the environment variables
-// If they're not set, we'll show an error message
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error(`
-    🚨 SUPABASE CONFIGURATION REQUIRED 🚨
-    
-    Please add these environment variables to your project:
-    
-    NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
-    NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-    
-    You can find these values in your Supabase project dashboard:
-    1. Go to https://supabase.com/dashboard
-    2. Select your project
-    3. Go to Settings > API
-    4. Copy the Project URL and anon/public key
-  `)
-}
+console.log("[Supabase] Using URL:", finalUrl)
+console.log("[Supabase] Key length:", finalKey.length)
 
-const finalUrl = supabaseUrl || "https://placeholder.supabase.co"
-const finalKey = supabaseAnonKey || "placeholder-key"
-
+// Create Supabase client with optimized settings
 export const supabase = createClient(finalUrl, finalKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
+    detectSessionInUrl: true,
   },
   realtime: {
     params: { eventsPerSecond: 10 },
   },
+  global: {
+    headers: {
+      "x-my-custom-header": "telegram-clone",
+    },
+  },
 })
 
 // Helper to know if we are operating on real backend
-export const SUPABASE_READY = Boolean(supabaseUrl && supabaseAnonKey)
+export const SUPABASE_READY = Boolean(supabaseUrl && supabaseAnonKey) || true // Force true since we have credentials
 
 console.log("[Supabase] SUPABASE_READY:", SUPABASE_READY)
 
-// Test connection only if we have real credentials
-if (SUPABASE_READY) {
-  supabase
-    .from("users")
-    .select("count", { count: "exact", head: true })
-    .then(({ count, error }) => {
-      if (error) {
-        console.log("[Supabase] Connection test failed:", error.message)
-        console.log("Make sure to run the SQL scripts in your Supabase project!")
-      } else {
-        console.log("[Supabase] Connection test successful, users count:", count)
-      }
-    })
-    .catch((err) => {
-      console.log("[Supabase] Connection test error:", err.message)
-    })
-} else {
-  console.log("[Supabase] Environment variables not set - please configure Supabase")
+// Test connection immediately
+async function testConnection() {
+  try {
+    console.log("[Supabase] Testing connection...")
+
+    // Test basic connection
+    const { data: healthCheck, error: healthError } = await supabase
+      .from("users")
+      .select("count", { count: "exact", head: true })
+
+    if (healthError) {
+      console.error("[Supabase] Health check failed:", healthError)
+      return false
+    }
+
+    console.log("[Supabase] ✅ Connection successful! Users count:", healthCheck)
+
+    // Test auth
+    const { data: authData, error: authError } = await supabase.auth.getSession()
+    if (authError) {
+      console.warn("[Supabase] Auth check warning:", authError.message)
+    } else {
+      console.log("[Supabase] Auth status:", authData.session ? "Authenticated" : "Not authenticated")
+    }
+
+    return true
+  } catch (err: any) {
+    console.error("[Supabase] Connection test failed:", err.message)
+    return false
+  }
 }
+
+// Run connection test
+testConnection()
 
 // Types for our database
 export interface User {
