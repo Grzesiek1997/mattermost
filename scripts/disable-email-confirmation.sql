@@ -1,39 +1,19 @@
 -- Disable email confirmation for development
--- This script disables email confirmation in Supabase Auth settings
--- Run this in your Supabase SQL Editor to allow instant signup without email confirmation
+-- This allows users to sign up and sign in immediately without email verification
 
--- Note: This is for development only. In production, you should keep email confirmation enabled.
+-- Update auth configuration to disable email confirmations
+UPDATE auth.config 
+SET enable_email_confirmations = false;
 
--- Check current auth settings
+-- Alternative method if the above doesn't work
+-- You can also set this in your Supabase dashboard:
+-- Authentication > Settings > Email Auth > Enable email confirmations = OFF
+
+-- Check current configuration
 SELECT * FROM auth.config;
 
--- Update auth settings to disable email confirmation
--- This allows users to sign up and sign in immediately without confirming their email
-UPDATE auth.config 
-SET 
-  enable_signup = true,
-  enable_confirmations = false,
-  enable_email_confirmations = false
-WHERE 
-  id = 'auth';
+-- If you want to re-enable email confirmations later (for production):
+-- UPDATE auth.config SET enable_email_confirmations = true;
 
--- Alternative: You can also set this in your Supabase Dashboard:
--- 1. Go to Authentication > Settings
--- 2. Under "User Signups" section
--- 3. Toggle OFF "Enable email confirmations"
-
--- Verify the changes
-SELECT 
-  enable_signup,
-  enable_confirmations,
-  enable_email_confirmations
-FROM auth.config 
-WHERE id = 'auth';
-
--- If you want to re-enable email confirmation later (for production):
--- UPDATE auth.config 
--- SET 
---   enable_confirmations = true,
---   enable_email_confirmations = true
--- WHERE 
---   id = 'auth';
+-- Note: After running this script, restart your Supabase instance or wait a few minutes
+-- for the changes to take effect.

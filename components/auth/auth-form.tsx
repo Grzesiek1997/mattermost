@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,7 +11,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AuthService } from "@/lib/auth"
 import { SUPABASE_READY } from "@/lib/supabase"
 import { toast } from "@/hooks/use-toast"
-import { Info, AlertTriangle, TestTube, CheckCircle, XCircle, Mail, RefreshCw } from "lucide-react"
+import { Info, AlertTriangle, TestTube, CheckCircle, XCircle, Mail, RefreshCw, Clock, RotateCcw } from "lucide-react"
 
 interface AuthFormProps {
   onAuthSuccess: () => void
@@ -29,6 +29,20 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
   const [debugMode, setDebugMode] = useState(false)
   const [debugInfo, setDebugInfo] = useState<any>(null)
   const [emailConfirmationNeeded, setEmailConfirmationNeeded] = useState<string | null>(null)
+  const [rateLimitInfo, setRateLimitInfo] = useState({ canSignup: true, cooldownRemaining: 0 })
+
+  // Update rate limit info every second
+  useEffect(() => {
+    const updateRateLimit = () => {
+      const info = AuthService.getRateLimitInfo()
+      setRateLimitInfo(info)
+    }
+
+    updateRateLimit()
+    const interval = setInterval(updateRateLimit, 1000)
+
+    return () => clearInterval(interval)
+  }, [])
 
   const runDebug = async () => {
     try {
@@ -72,6 +86,15 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const handleResetRateLimit = () => {
+    AuthService.resetRateLimit()
+    setRateLimitInfo({ canSignup: true, cooldownRemaining: 0 })
+    toast({
+      title: "Rate limit reset",
+      description: "You can now create accounts immediately (for testing)",
+    })
   }
 
   const handleSignIn = async (e: React.FormEvent) => {
@@ -161,6 +184,16 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
       return
     }
 
+    // Check rate limiting
+    if (!rateLimitInfo.canSignup) {
+      toast({
+        title: "Please wait",
+        description: `You can create another account in ${rateLimitInfo.cooldownRemaining} seconds. This prevents spam.`,
+        variant: "destructive",
+      })
+      return
+    }
+
     setIsLoading(true)
     setEmailConfirmationNeeded(null)
 
@@ -189,8 +222,10 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
 
       let errorMessage = error.message || "An unexpected error occurred"
 
-      // Provide helpful error messages
-      if (errorMessage.includes("User already registered")) {
+      // Handle rate limiting specifically
+      if (errorMessage.includes("wait") && errorMessage.includes("seconds")) {
+        // Error already has good message about waiting
+      } else if (errorMessage.includes("User already registered")) {
         errorMessage = "An account with this email already exists. Please sign in instead."
       } else if (errorMessage.includes("Password should be at least 6 characters")) {
         errorMessage = "Password must be at least 6 characters long."
@@ -198,6 +233,8 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
         errorMessage = "Account creation temporarily blocked. Please try again in a moment or contact support."
       } else if (errorMessage.includes("Invalid email")) {
         errorMessage = "Please enter a valid email address."
+      } else if (errorMessage.includes("Signup is disabled")) {
+        errorMessage = "Account creation is currently disabled. Please contact support."
       }
 
       toast({
@@ -211,6 +248,16 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
   }
 
   const handleTestAccount = async () => {
+    // Check rate limiting first
+    if (!rateLimitInfo.canSignup) {
+      toast({
+        title: "Please wait",
+        description: `You can create another account in ${rateLimitInfo.cooldownRemaining} seconds. This prevents spam.`,
+        variant: "destructive",
+      })
+      return
+    }
+
     setIsLoading(true)
     setEmailConfirmationNeeded(null)
 
@@ -272,6 +319,27 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
                 <strong>Warning:</strong> Supabase connection not configured. Some features may not work.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {!rateLimitInfo.canSignup && (
+            <Alert>
+              <Clock className="h-4 w-4" />
+              <AlertDescription>
+                <div className="space-y-2">
+                  <p>
+                    <strong>Rate limit active</strong>
+                  </p>
+                  <p className="text-sm">
+                    Please wait {rateLimitInfo.cooldownRemaining} seconds before creating another account. This prevents
+                    spam and protects our service.
+                  </p>
+                  <Button variant="outline" size="sm" onClick={handleResetRateLimit} className="w-full bg-transparent">
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    Reset rate limit (for testing)
+                  </Button>
+                </div>
               </AlertDescription>
             </Alert>
           )}
@@ -391,8 +459,21 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
                     minLength={6}
                   />
                 </div>
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? "Creating account..." : "Sign Up"}
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={isLoading || !rateLimitInfo.canSignup}
+                  title={
+                    !rateLimitInfo.canSignup
+                      ? `Please wait ${rateLimitInfo.cooldownRemaining} seconds`
+                      : "Create your account"
+                  }
+                >
+                  {isLoading
+                    ? "Creating account..."
+                    : !rateLimitInfo.canSignup
+                      ? `Wait ${rateLimitInfo.cooldownRemaining}s`
+                      : "Sign Up"}
                 </Button>
               </form>
             </TabsContent>
@@ -409,8 +490,19 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={handleTestAccount} disabled={isLoading}>
-                Create Test Account
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleTestAccount}
+                disabled={isLoading || !rateLimitInfo.canSignup}
+                title={
+                  !rateLimitInfo.canSignup
+                    ? `Please wait ${rateLimitInfo.cooldownRemaining} seconds`
+                    : "Create a test account"
+                }
+              >
+                {!rateLimitInfo.canSignup ? `Wait ${rateLimitInfo.cooldownRemaining}s` : "Create Test Account"}
               </Button>
               <Button type="button" variant="outline" size="sm" onClick={runDebug} disabled={isLoading}>
                 <TestTube className="h-4 w-4 mr-1" />
@@ -443,10 +535,19 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
                       <span>Email Confirmed</span>
                     </div>
                     <div className="flex items-center gap-1">
+                      {getDebugStatusIcon(debugInfo.rateLimiting?.canSignup)}
+                      <span>Can Signup</span>
+                    </div>
+                    <div className="flex items-center gap-1">
                       {getDebugStatusIcon(SUPABASE_READY)}
                       <span>Supabase</span>
                     </div>
                   </div>
+                  {debugInfo.rateLimiting?.cooldownRemaining > 0 && (
+                    <p className="text-xs text-orange-600">
+                      Rate limit: {debugInfo.rateLimiting.cooldownRemaining}s remaining
+                    </p>
+                  )}
                   <details className="mt-2">
                     <summary className="text-xs cursor-pointer">Show detailed debug info</summary>
                     <pre className="text-xs mt-2 bg-gray-100 p-2 rounded overflow-auto max-h-32">

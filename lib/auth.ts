@@ -2,6 +2,10 @@ import { supabase } from "./supabase"
 import type { User } from "./supabase"
 
 export class AuthService {
+  // Rate limiting tracking
+  private static lastSignupAttempt = 0
+  private static signupCooldown = 25000 // 25 seconds in milliseconds
+
   // Debug function to check auth status
   static async debugAuth() {
     try {
@@ -54,6 +58,18 @@ export class AuthService {
 
       console.log("[AuthService] RLS test:", rlsTest)
 
+      // Check rate limiting status
+      const now = Date.now()
+      const timeSinceLastSignup = now - this.lastSignupAttempt
+      const canSignup = timeSinceLastSignup >= this.signupCooldown
+
+      console.log("[AuthService] Rate limiting:", {
+        lastAttempt: new Date(this.lastSignupAttempt).toISOString(),
+        timeSince: Math.round(timeSinceLastSignup / 1000),
+        cooldownSeconds: this.signupCooldown / 1000,
+        canSignup,
+      })
+
       console.log("[AuthService] === DEBUG AUTH END ===")
 
       return {
@@ -62,6 +78,10 @@ export class AuthService {
         user: !!authUser.user,
         userEmail: authUser.user?.email || null,
         emailConfirmed: !!authUser.user?.email_confirmed_at,
+        rateLimiting: {
+          canSignup,
+          cooldownRemaining: canSignup ? 0 : Math.ceil((this.signupCooldown - timeSinceLastSignup) / 1000),
+        },
         rlsTest,
         errors: {
           connection: connectionError?.message,
@@ -77,6 +97,7 @@ export class AuthService {
         session: false,
         user: false,
         emailConfirmed: false,
+        rateLimiting: { canSignup: false, cooldownRemaining: 0 },
       }
     }
   }
@@ -88,6 +109,22 @@ export class AuthService {
     console.log("[AuthService] User data:", userData)
 
     try {
+      // Check rate limiting
+      const now = Date.now()
+      const timeSinceLastSignup = now - this.lastSignupAttempt
+      const cooldownRemaining = this.signupCooldown - timeSinceLastSignup
+
+      if (timeSinceLastSignup < this.signupCooldown) {
+        const waitSeconds = Math.ceil(cooldownRemaining / 1000)
+        console.log("[AuthService] Rate limited, need to wait:", waitSeconds, "seconds")
+        throw new Error(
+          `Please wait ${waitSeconds} seconds before creating another account. This is a security measure to prevent spam.`,
+        )
+      }
+
+      // Update last attempt time
+      this.lastSignupAttempt = now
+
       // Normalize email
       const normalizedEmail = email.trim().toLowerCase()
       console.log("[AuthService] Normalized email:", normalizedEmail)
@@ -114,12 +151,21 @@ export class AuthService {
         console.error("[AuthService] Auth signup error:", authError)
 
         // Handle specific signup errors
-        if (authError.message.includes("User already registered")) {
+        if (authError.message.includes("For security purposes, you can only request this after")) {
+          // Extract wait time from error message if possible
+          const match = authError.message.match(/after (\d+) seconds/)
+          const waitTime = match ? Number.parseInt(match[1]) : 25
+          throw new Error(
+            `Please wait ${waitTime} seconds before creating another account. This prevents spam and protects our service.`,
+          )
+        } else if (authError.message.includes("User already registered")) {
           throw new Error(`An account with ${normalizedEmail} already exists. Please sign in instead.`)
         } else if (authError.message.includes("Password should be at least")) {
           throw new Error("Password must be at least 6 characters long.")
         } else if (authError.message.includes("Invalid email")) {
           throw new Error("Please enter a valid email address.")
+        } else if (authError.message.includes("Signup is disabled")) {
+          throw new Error("Account creation is currently disabled. Please contact support.")
         }
 
         throw new Error(`Account creation failed: ${authError.message}`)
@@ -645,5 +691,25 @@ export class AuthService {
       console.error("[AuthService] Resend confirmation failed:", error)
       throw error
     }
+  }
+
+  // Get rate limiting info
+  static getRateLimitInfo() {
+    const now = Date.now()
+    const timeSinceLastSignup = now - this.lastSignupAttempt
+    const canSignup = timeSinceLastSignup >= this.signupCooldown
+    const cooldownRemaining = canSignup ? 0 : Math.ceil((this.signupCooldown - timeSinceLastSignup) / 1000)
+
+    return {
+      canSignup,
+      cooldownRemaining,
+      lastAttempt: this.lastSignupAttempt,
+    }
+  }
+
+  // Reset rate limiting (for testing)
+  static resetRateLimit() {
+    this.lastSignupAttempt = 0
+    console.log("[AuthService] Rate limit reset")
   }
 }
