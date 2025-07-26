@@ -7,6 +7,7 @@ import { ChatWindow } from "@/components/chat/chat-window"
 import { NewChatDialog } from "@/components/chat/new-chat-dialog"
 import { SettingsDialog } from "@/components/settings/settings-dialog"
 import { ConnectionTester } from "@/components/debug/connection-tester"
+import { AdminPanel } from "@/components/admin/admin-panel"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -15,7 +16,7 @@ import { AuthService } from "@/lib/auth"
 import { useRealtimePresence } from "@/hooks/use-realtime"
 import { SUPABASE_READY } from "@/lib/supabase"
 import type { User, Chat } from "@/lib/supabase"
-import { LogOut, Moon, Sun, Bell, TestTube } from "lucide-react"
+import { LogOut, Moon, Sun, Bell, TestTube, Shield } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import {
   DropdownMenu,
@@ -32,6 +33,8 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [darkMode, setDarkMode] = useState(false)
   const [showTester, setShowTester] = useState(false)
+  const [showAdmin, setShowAdmin] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
   const onlineUsers = useRealtimePresence()
 
   useEffect(() => {
@@ -42,6 +45,12 @@ export default function Home() {
     try {
       const user = await AuthService.getCurrentUser()
       setCurrentUser(user)
+
+      if (user) {
+        // Check if user is admin
+        const adminStatus = await AuthService.isAdmin(user.id)
+        setIsAdmin(adminStatus)
+      }
     } catch (error) {
       console.error("Auth check failed:", error)
     } finally {
@@ -54,6 +63,7 @@ export default function Home() {
       await AuthService.signOut()
       setCurrentUser(null)
       setSelectedChat(null)
+      setIsAdmin(false)
       toast({
         title: "Signed out",
         description: "You have been signed out successfully.",
@@ -69,8 +79,6 @@ export default function Home() {
 
   const handleChatSelect = async (chatId: string) => {
     try {
-      // In a real app, you'd fetch the chat details
-      // For now, we'll create a minimal chat object
       const chat: Chat = {
         id: chatId,
         type: "group",
@@ -98,7 +106,12 @@ export default function Home() {
     )
   }
 
-  // Show connection tester if requested
+  // Show admin panel
+  if (showAdmin && currentUser && isAdmin) {
+    return <AdminPanel currentUser={currentUser} onClose={() => setShowAdmin(false)} />
+  }
+
+  // Show connection tester
   if (showTester) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -151,6 +164,7 @@ export default function Home() {
                   </Badge>
                   <span className="text-xs text-gray-500">{onlineUsers.length} online</span>
                   {SUPABASE_READY && <Badge className="text-xs bg-green-500 hover:bg-green-500">Connected</Badge>}
+                  {isAdmin && <Badge className="text-xs bg-red-500 hover:bg-red-500">Admin</Badge>}
                 </div>
               </div>
             </div>
@@ -160,6 +174,15 @@ export default function Home() {
                 <SettingsDialog currentUser={currentUser} onUserUpdate={handleUserUpdate} />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                {isAdmin && (
+                  <>
+                    <DropdownMenuItem onClick={() => setShowAdmin(true)}>
+                      <Shield className="h-4 w-4 mr-2" />
+                      Admin Panel
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
                 <DropdownMenuItem onClick={() => setShowTester(true)}>
                   <TestTube className="h-4 w-4 mr-2" />
                   Test Connection
@@ -208,10 +231,18 @@ export default function Home() {
               <p className="text-gray-500 mb-6">Select a chat to start messaging or create a new one</p>
               <div className="space-y-3">
                 <NewChatDialog onChatCreated={(chat) => setSelectedChat(chat)} />
-                <Button onClick={() => setShowTester(true)} variant="outline" size="sm">
-                  <TestTube className="h-4 w-4 mr-2" />
-                  Test System
-                </Button>
+                <div className="flex gap-2 justify-center">
+                  <Button onClick={() => setShowTester(true)} variant="outline" size="sm">
+                    <TestTube className="h-4 w-4 mr-2" />
+                    Test System
+                  </Button>
+                  {isAdmin && (
+                    <Button onClick={() => setShowAdmin(true)} variant="outline" size="sm">
+                      <Shield className="h-4 w-4 mr-2" />
+                      Admin Panel
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
