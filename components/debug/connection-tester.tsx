@@ -8,11 +8,21 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { ContactService } from "@/lib/contact-service"
 import { AuthService } from "@/lib/auth"
 import { supabase, SUPABASE_READY } from "@/lib/supabase"
-import { CheckCircle, XCircle, Loader2, RefreshCw, Database, Users, Search, UserPlus } from "lucide-react"
+import {
+  CheckCircle,
+  XCircle,
+  Loader2,
+  RefreshCw,
+  Database,
+  Users,
+  Search,
+  UserPlus,
+  AlertTriangle,
+} from "lucide-react"
 
 interface TestResult {
   name: string
-  status: "pending" | "success" | "error"
+  status: "pending" | "success" | "error" | "skipped"
   message: string
   details?: any
 }
@@ -21,6 +31,7 @@ export function ConnectionTester() {
   const [tests, setTests] = useState<TestResult[]>([])
   const [isRunning, setIsRunning] = useState(false)
   const [currentUser, setCurrentUser] = useState<any>(null)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
 
   const updateTest = (name: string, status: TestResult["status"], message: string, details?: any) => {
     setTests((prev) => {
@@ -39,8 +50,10 @@ export function ConnectionTester() {
   const runTests = async () => {
     setIsRunning(true)
     setTests([])
+    setCurrentUser(null)
+    setIsAuthenticated(false)
 
-    // Test 1: Database Connection
+    // Test 1: Database Connection (doesn't require auth)
     updateTest("Database Connection", "pending", "Testing connection...")
     try {
       const { data, error } = await supabase.from("users").select("count", { count: "exact", head: true })
@@ -50,21 +63,37 @@ export function ConnectionTester() {
       updateTest("Database Connection", "error", `Failed: ${err.message}`)
     }
 
-    // Test 2: Authentication
-    updateTest("Authentication", "pending", "Checking auth status...")
+    // Test 2: Authentication Status Check (safe)
+    updateTest("Authentication Check", "pending", "Checking auth status...")
     try {
-      const user = await AuthService.getCurrentUser()
-      if (user) {
-        setCurrentUser(user)
-        updateTest("Authentication", "success", `Authenticated as: ${user.email}`, user)
+      const authStatus = await AuthService.isAuthenticated()
+      setIsAuthenticated(authStatus)
+
+      if (authStatus) {
+        const user = await AuthService.getCurrentUser()
+        if (user) {
+          setCurrentUser(user)
+          updateTest("Authentication Check", "success", `Authenticated as: ${user.email}`, user)
+        } else {
+          updateTest("Authentication Check", "error", "Auth session exists but no user profile found")
+        }
       } else {
-        updateTest("Authentication", "error", "Not authenticated")
+        updateTest("Authentication Check", "success", "Not authenticated (this is normal for logged out users)")
       }
     } catch (err: any) {
-      updateTest("Authentication", "error", `Auth error: ${err.message}`)
+      updateTest("Authentication Check", "error", `Auth check failed: ${err.message}`)
     }
 
-    // Test 3: Contact Service Connection
+    // Test 3: Auth Debug Info
+    updateTest("Auth Debug", "pending", "Running auth diagnostics...")
+    try {
+      const debugInfo = await AuthService.debugAuth()
+      updateTest("Auth Debug", "success", "Debug completed", debugInfo)
+    } catch (err: any) {
+      updateTest("Auth Debug", "error", `Debug failed: ${err.message}`)
+    }
+
+    // Test 4: Contact Service Connection (doesn't require auth)
     updateTest("Contact Service", "pending", "Testing contact service...")
     try {
       const connectionOk = await ContactService.testConnection()
@@ -77,9 +106,9 @@ export function ConnectionTester() {
       updateTest("Contact Service", "error", `Contact service error: ${err.message}`)
     }
 
-    // Test 4: User Search (only if authenticated)
-    const authTest = tests.find((t) => t.name === "Authentication")
-    if (authTest?.status === "success") {
+    // Tests that require authentication
+    if (isAuthenticated && currentUser) {
+      // Test 5: User Search
       updateTest("User Search", "pending", "Testing user search...")
       try {
         const searchResults = await ContactService.searchUsers("test", 5)
@@ -88,7 +117,7 @@ export function ConnectionTester() {
         updateTest("User Search", "error", `Search failed: ${err.message}`)
       }
 
-      // Test 5: Get Contacts
+      // Test 6: Get Contacts
       updateTest("Get Contacts", "pending", "Getting contacts...")
       try {
         const contacts = await ContactService.getContacts()
@@ -97,7 +126,7 @@ export function ConnectionTester() {
         updateTest("Get Contacts", "error", `Failed: ${err.message}`)
       }
 
-      // Test 6: Get Invitations
+      // Test 7: Get Invitations
       updateTest("Get Invitations", "pending", "Getting invitations...")
       try {
         const invitations = await ContactService.getPendingInvitations()
@@ -105,6 +134,22 @@ export function ConnectionTester() {
       } catch (err: any) {
         updateTest("Get Invitations", "error", `Failed: ${err.message}`)
       }
+
+      // Test 8: Admin Check
+      updateTest("Admin Check", "pending", "Checking admin status...")
+      try {
+        const isAdmin = await AuthService.isAdmin()
+        const adminRole = await AuthService.getAdminRole()
+        updateTest("Admin Check", "success", `Role: ${adminRole}, Admin: ${isAdmin}`, { isAdmin, adminRole })
+      } catch (err: any) {
+        updateTest("Admin Check", "error", `Failed: ${err.message}`)
+      }
+    } else {
+      // Skip auth-required tests
+      updateTest("User Search", "skipped", "Skipped - requires authentication")
+      updateTest("Get Contacts", "skipped", "Skipped - requires authentication")
+      updateTest("Get Invitations", "skipped", "Skipped - requires authentication")
+      updateTest("Admin Check", "skipped", "Skipped - requires authentication")
     }
 
     setIsRunning(false)
@@ -122,6 +167,8 @@ export function ConnectionTester() {
         return <CheckCircle className="h-4 w-4 text-green-500" />
       case "error":
         return <XCircle className="h-4 w-4 text-red-500" />
+      case "skipped":
+        return <AlertTriangle className="h-4 w-4 text-yellow-500" />
     }
   }
 
@@ -133,6 +180,8 @@ export function ConnectionTester() {
         return <Badge className="bg-green-500 hover:bg-green-500">Success</Badge>
       case "error":
         return <Badge variant="destructive">Error</Badge>
+      case "skipped":
+        return <Badge variant="outline">Skipped</Badge>
     }
   }
 
@@ -159,14 +208,18 @@ export function ConnectionTester() {
             </AlertDescription>
           </Alert>
 
-          {currentUser && (
-            <Alert className="border-blue-200 bg-blue-50">
-              <Users className="h-4 w-4 text-blue-600" />
-              <AlertDescription className="text-blue-800">
-                <strong>Current User:</strong> {currentUser.full_name || currentUser.username} ({currentUser.email})
-              </AlertDescription>
-            </Alert>
-          )}
+          <Alert className={isAuthenticated ? "border-blue-200 bg-blue-50" : "border-yellow-200 bg-yellow-50"}>
+            <Users className={`h-4 w-4 ${isAuthenticated ? "text-blue-600" : "text-yellow-600"}`} />
+            <AlertDescription className={isAuthenticated ? "text-blue-800" : "text-yellow-800"}>
+              <strong>Authentication Status:</strong> {isAuthenticated ? "✅ Authenticated" : "❌ Not authenticated"}
+              {currentUser && (
+                <>
+                  <br />
+                  <strong>Current User:</strong> {currentUser.full_name || currentUser.username} ({currentUser.email})
+                </>
+              )}
+            </AlertDescription>
+          </Alert>
 
           <div className="grid gap-4">
             {tests.map((test) => (
@@ -197,8 +250,18 @@ export function ConnectionTester() {
               <div className="flex gap-4 text-sm">
                 <span className="text-green-600">✅ Passed: {tests.filter((t) => t.status === "success").length}</span>
                 <span className="text-red-600">❌ Failed: {tests.filter((t) => t.status === "error").length}</span>
+                <span className="text-yellow-600">⏭️ Skipped: {tests.filter((t) => t.status === "skipped").length}</span>
                 <span className="text-blue-600">⏳ Running: {tests.filter((t) => t.status === "pending").length}</span>
               </div>
+              {!isAuthenticated && (
+                <Alert className="mt-4">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>
+                    <strong>Note:</strong> Some tests were skipped because you're not logged in. Sign in to run all
+                    tests.
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
           )}
         </CardContent>
@@ -224,9 +287,10 @@ export function ConnectionTester() {
             }}
             variant="outline"
             size="sm"
+            disabled={!isAuthenticated}
           >
             <Search className="h-4 w-4 mr-2" />
-            Test Search "john"
+            Test Search "john" {!isAuthenticated && "(Login required)"}
           </Button>
 
           <Button
@@ -240,9 +304,26 @@ export function ConnectionTester() {
             }}
             variant="outline"
             size="sm"
+            disabled={!isAuthenticated}
           >
             <Users className="h-4 w-4 mr-2" />
-            Get My Contacts
+            Get My Contacts {!isAuthenticated && "(Login required)"}
+          </Button>
+
+          <Button
+            onClick={async () => {
+              try {
+                const debugInfo = await AuthService.debugAuth()
+                alert(`Debug info: ${JSON.stringify(debugInfo, null, 2)}`)
+              } catch (err: any) {
+                alert(`Debug error: ${err.message}`)
+              }
+            }}
+            variant="outline"
+            size="sm"
+          >
+            <Database className="h-4 w-4 mr-2" />
+            Run Auth Debug
           </Button>
         </CardContent>
       </Card>

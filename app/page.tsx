@@ -35,6 +35,7 @@ export default function Home() {
   const [showTester, setShowTester] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [authChecked, setAuthChecked] = useState(false)
   const onlineUsers = useRealtimePresence()
 
   useEffect(() => {
@@ -43,17 +44,37 @@ export default function Home() {
 
   const checkAuth = async () => {
     try {
-      const user = await AuthService.getCurrentUser()
-      setCurrentUser(user)
+      console.log("[HomePage] Checking authentication...")
 
-      if (user) {
-        // Check if user is admin
-        const adminStatus = await AuthService.isAdmin(user.id)
-        setIsAdmin(adminStatus)
+      // First check if user is authenticated
+      const isAuthenticated = await AuthService.isAuthenticated()
+      console.log("[HomePage] Is authenticated:", isAuthenticated)
+
+      if (isAuthenticated) {
+        // Get current user profile
+        const user = await AuthService.getCurrentUser()
+        console.log("[HomePage] Current user:", user)
+
+        setCurrentUser(user)
+
+        if (user) {
+          // Check if user is admin
+          const adminStatus = await AuthService.isAdmin(user.id)
+          console.log("[HomePage] Admin status:", adminStatus)
+          setIsAdmin(adminStatus)
+        }
+      } else {
+        console.log("[HomePage] User not authenticated")
+        setCurrentUser(null)
+        setIsAdmin(false)
       }
     } catch (error) {
-      console.error("Auth check failed:", error)
+      console.error("[HomePage] Auth check failed:", error)
+      // Don't throw - just set to unauthenticated state
+      setCurrentUser(null)
+      setIsAdmin(false)
     } finally {
+      setAuthChecked(true)
       setLoading(false)
     }
   }
@@ -98,10 +119,14 @@ export default function Home() {
     setCurrentUser(updatedUser)
   }
 
-  if (loading) {
+  // Show loading spinner while checking auth
+  if (loading || !authChecked) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500" />
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4" />
+          <p className="text-gray-600">Checking authentication...</p>
+        </div>
       </div>
     )
   }
@@ -125,6 +150,7 @@ export default function Home() {
     )
   }
 
+  // Show auth form if not authenticated
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -139,6 +165,7 @@ export default function Home() {
     )
   }
 
+  // Main app interface
   return (
     <div className={`flex h-screen bg-gray-100 ${darkMode ? "dark" : ""}`}>
       {/* Sidebar */}

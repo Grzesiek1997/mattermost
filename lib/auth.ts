@@ -7,7 +7,7 @@ export class AuthService {
     try {
       console.log("[AuthService] === DEBUG AUTH START ===")
 
-      // Check Supabase connection
+      // Check Supabase connection (this doesn't require auth)
       const { data: connectionTest, error: connectionError } = await supabase
         .from("users")
         .select("count", { count: "exact", head: true })
@@ -18,7 +18,7 @@ export class AuthService {
         count: connectionTest,
       })
 
-      // Check current auth session
+      // Check current auth session (safe - doesn't throw if no session)
       const { data: session, error: sessionError } = await supabase.auth.getSession()
       console.log("[AuthService] Current session:", {
         hasSession: !!session.session,
@@ -26,7 +26,7 @@ export class AuthService {
         error: sessionError?.message,
       })
 
-      // Check auth user
+      // Check auth user (safe - doesn't throw if no user)
       const { data: authUser, error: authError } = await supabase.auth.getUser()
       console.log("[AuthService] Auth user:", {
         hasUser: !!authUser.user,
@@ -34,16 +34,23 @@ export class AuthService {
         error: authError?.message,
       })
 
-      // Test RLS policies
-      try {
-        const { data: testResult, error: testError } = await supabase.rpc("test_user_creation", {
-          test_email: "test@example.com",
-          test_username: "testuser",
-        })
-        console.log("[AuthService] RLS test:", { result: testResult, error: testError })
-      } catch (testErr) {
-        console.log("[AuthService] RLS test function not available")
+      // Test RLS policies (only if we have a user)
+      let rlsTest = null
+      if (authUser.user) {
+        try {
+          const { data: testResult, error: testError } = await supabase.rpc("test_user_creation", {
+            test_email: "test@example.com",
+            test_username: "testuser",
+          })
+          rlsTest = { result: testResult, error: testError }
+        } catch (testErr) {
+          rlsTest = { error: "Function not available" }
+        }
+      } else {
+        rlsTest = { error: "No authenticated user for RLS test" }
       }
+
+      console.log("[AuthService] RLS test:", rlsTest)
 
       console.log("[AuthService] === DEBUG AUTH END ===")
 
@@ -51,10 +58,22 @@ export class AuthService {
         connection: !connectionError,
         session: !!session.session,
         user: !!authUser.user,
+        userEmail: authUser.user?.email || null,
+        rlsTest,
+        errors: {
+          connection: connectionError?.message,
+          session: sessionError?.message,
+          auth: authError?.message,
+        },
       }
     } catch (error) {
       console.error("[AuthService] Debug failed:", error)
-      return { error: error.message }
+      return {
+        error: error.message,
+        connection: false,
+        session: false,
+        user: false,
+      }
     }
   }
 
@@ -207,7 +226,7 @@ export class AuthService {
 
         // If user doesn't exist, suggest signup
         if (error.message.includes("Invalid login credentials")) {
-          // Check if user exists in our users table
+          // Check if user exists in our users table (this doesn't require auth)
           const { data: existingUser } = await supabase
             .from("users")
             .select("email")
@@ -313,10 +332,15 @@ export class AuthService {
     console.log("[AuthService] === SIGNOUT START ===")
 
     try {
-      // Get current user before signing out
+      // Get current user before signing out (safe - doesn't throw)
       const {
         data: { user },
+        error: getUserError,
       } = await supabase.auth.getUser()
+
+      if (getUserError) {
+        console.warn("[AuthService] Error getting user for signout:", getUserError)
+      }
 
       if (user) {
         console.log("[AuthService] Updating offline status for:", user.email)
@@ -352,7 +376,7 @@ export class AuthService {
     console.log("[AuthService] === GET CURRENT USER START ===")
 
     try {
-      // Get authenticated user
+      // Get authenticated user (safe - doesn't throw)
       const {
         data: { user: authUser },
         error: authError,
@@ -360,6 +384,7 @@ export class AuthService {
 
       if (authError) {
         console.error("[AuthService] Auth error:", authError)
+        // Don't throw here - just return null for unauthenticated state
         return null
       }
 
@@ -379,6 +404,7 @@ export class AuthService {
 
       if (profileError) {
         console.error("[AuthService] Profile fetch error:", profileError)
+        // If profile doesn't exist, return null instead of throwing
         return null
       }
 
@@ -387,6 +413,7 @@ export class AuthService {
     } catch (error) {
       console.error("[AuthService] === GET CURRENT USER FAILED ===")
       console.error("[AuthService] Error:", error)
+      // Return null instead of throwing to handle gracefully
       return null
     }
   }
@@ -418,11 +445,25 @@ export class AuthService {
     }
   }
 
-  // Admin functions
+  // Admin functions - these handle missing auth gracefully
   static async isAdmin(userId?: string): Promise<boolean> {
     try {
+      // If no userId provided, get current user
+      if (!userId) {
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser()
+
+        if (authError || !user) {
+          console.log("[AuthService] No authenticated user for admin check")
+          return false
+        }
+        userId = user.id
+      }
+
       const { data, error } = await supabase.rpc("is_admin", {
-        user_uuid: userId || undefined,
+        user_uuid: userId,
       })
 
       if (error) {
@@ -439,8 +480,22 @@ export class AuthService {
 
   static async getAdminRole(userId?: string): Promise<string> {
     try {
+      // If no userId provided, get current user
+      if (!userId) {
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser()
+
+        if (authError || !user) {
+          console.log("[AuthService] No authenticated user for admin role check")
+          return "user"
+        }
+        userId = user.id
+      }
+
       const { data, error } = await supabase.rpc("get_admin_role", {
-        user_uuid: userId || undefined,
+        user_uuid: userId,
       })
 
       if (error) {
@@ -489,6 +544,32 @@ export class AuthService {
     } catch (error: any) {
       console.error("[AuthService] Promote user failed:", error)
       throw error
+    }
+  }
+
+  // Check if user is authenticated (safe method)
+  static async isAuthenticated(): Promise<boolean> {
+    try {
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser()
+
+      return !error && !!user
+    } catch (error) {
+      console.error("[AuthService] Authentication check failed:", error)
+      return false
+    }
+  }
+
+  // Get auth session safely
+  static async getSession() {
+    try {
+      const { data, error } = await supabase.auth.getSession()
+      return { session: data.session, error }
+    } catch (error) {
+      console.error("[AuthService] Get session failed:", error)
+      return { session: null, error }
     }
   }
 }
