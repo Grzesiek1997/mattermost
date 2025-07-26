@@ -23,6 +23,7 @@ export class AuthService {
       console.log("[AuthService] Current session:", {
         hasSession: !!session.session,
         user: session.session?.user?.email,
+        confirmed: session.session?.user?.email_confirmed_at,
         error: sessionError?.message,
       })
 
@@ -31,6 +32,7 @@ export class AuthService {
       console.log("[AuthService] Auth user:", {
         hasUser: !!authUser.user,
         email: authUser.user?.email,
+        confirmed: authUser.user?.email_confirmed_at,
         error: authError?.message,
       })
 
@@ -59,6 +61,7 @@ export class AuthService {
         session: !!session.session,
         user: !!authUser.user,
         userEmail: authUser.user?.email || null,
+        emailConfirmed: !!authUser.user?.email_confirmed_at,
         rlsTest,
         errors: {
           connection: connectionError?.message,
@@ -73,6 +76,7 @@ export class AuthService {
         connection: false,
         session: false,
         user: false,
+        emailConfirmed: false,
       }
     }
   }
@@ -91,7 +95,7 @@ export class AuthService {
       // First, run debug to check system status
       await this.debugAuth()
 
-      // Create auth user first
+      // Create auth user first - disable email confirmation for development
       console.log("[AuthService] Creating auth user...")
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: normalizedEmail,
@@ -101,12 +105,24 @@ export class AuthService {
             username: userData.username,
             full_name: userData.full_name,
           },
+          // For development - skip email confirmation
+          emailRedirectTo: undefined,
         },
       })
 
       if (authError) {
         console.error("[AuthService] Auth signup error:", authError)
-        throw new Error(`Authentication failed: ${authError.message}`)
+
+        // Handle specific signup errors
+        if (authError.message.includes("User already registered")) {
+          throw new Error(`An account with ${normalizedEmail} already exists. Please sign in instead.`)
+        } else if (authError.message.includes("Password should be at least")) {
+          throw new Error("Password must be at least 6 characters long.")
+        } else if (authError.message.includes("Invalid email")) {
+          throw new Error("Please enter a valid email address.")
+        }
+
+        throw new Error(`Account creation failed: ${authError.message}`)
       }
 
       if (!authData.user) {
@@ -117,7 +133,24 @@ export class AuthService {
         id: authData.user.id,
         email: authData.user.email,
         confirmed: authData.user.email_confirmed_at,
+        needsConfirmation: !authData.user.email_confirmed_at && !authData.session,
       })
+
+      // Check if email confirmation is required
+      if (!authData.user.email_confirmed_at && !authData.session) {
+        console.log("[AuthService] Email confirmation required")
+        return {
+          user: authData.user,
+          profile: null,
+          needsEmailConfirmation: true,
+          message: `Please check your email (${normalizedEmail}) and click the confirmation link to complete your account setup.`,
+        }
+      }
+
+      // If we have a session, the user is automatically confirmed (development mode)
+      if (authData.session) {
+        console.log("[AuthService] User automatically confirmed (development mode)")
+      }
 
       // Wait a moment for auth to settle
       await new Promise((resolve) => setTimeout(resolve, 1000))
@@ -135,7 +168,7 @@ export class AuthService {
         if (!functionError && profileFromFunction) {
           console.log("[AuthService] Profile created via function:", profileFromFunction)
           console.log("[AuthService] === SIGNUP SUCCESS (FUNCTION) ===")
-          return { user: authData.user, profile: profileFromFunction }
+          return { user: authData.user, profile: profileFromFunction, needsEmailConfirmation: false }
         } else {
           console.warn("[AuthService] Function failed, trying direct insert:", functionError)
         }
@@ -193,7 +226,7 @@ export class AuthService {
       console.log("[AuthService] Profile created:", profile)
       console.log("[AuthService] === SIGNUP SUCCESS (DIRECT) ===")
 
-      return { user: authData.user, profile }
+      return { user: authData.user, profile, needsEmailConfirmation: false }
     } catch (error: any) {
       console.error("[AuthService] === SIGNUP FAILED ===")
       console.error("[AuthService] Error:", error)
@@ -224,8 +257,24 @@ export class AuthService {
       if (error) {
         console.error("[AuthService] Signin error:", error)
 
-        // If user doesn't exist, suggest signup
-        if (error.message.includes("Invalid login credentials")) {
+        // Handle specific signin errors
+        if (error.message.includes("Email not confirmed")) {
+          // Try to resend confirmation email
+          console.log("[AuthService] Attempting to resend confirmation email...")
+          try {
+            await supabase.auth.resend({
+              type: "signup",
+              email: normalizedEmail,
+            })
+            throw new Error(
+              `Please check your email (${normalizedEmail}) and click the confirmation link. We've sent you a new confirmation email.`,
+            )
+          } catch (resendError) {
+            throw new Error(
+              `Please check your email (${normalizedEmail}) and click the confirmation link to activate your account.`,
+            )
+          }
+        } else if (error.message.includes("Invalid login credentials")) {
           // Check if user exists in our users table (this doesn't require auth)
           const { data: existingUser } = await supabase
             .from("users")
@@ -236,11 +285,13 @@ export class AuthService {
           if (!existingUser) {
             throw new Error(`No account found for ${normalizedEmail}. Please sign up first.`)
           } else {
-            throw new Error(`Invalid password for ${normalizedEmail}. Please check your password.`)
+            throw new Error(`Invalid password for ${normalizedEmail}. Please check your password and try again.`)
           }
+        } else if (error.message.includes("Too many requests")) {
+          throw new Error("Too many login attempts. Please wait a moment and try again.")
         }
 
-        throw error
+        throw new Error(`Sign in failed: ${error.message}`)
       }
 
       if (!data.user) {
@@ -250,6 +301,7 @@ export class AuthService {
       console.log("[AuthService] Auth signin successful:", {
         id: data.user.id,
         email: data.user.email,
+        confirmed: data.user.email_confirmed_at,
       })
 
       // Get or create user profile
@@ -570,6 +622,28 @@ export class AuthService {
     } catch (error) {
       console.error("[AuthService] Get session failed:", error)
       return { session: null, error }
+    }
+  }
+
+  // Resend confirmation email
+  static async resendConfirmation(email: string): Promise<void> {
+    try {
+      console.log("[AuthService] Resending confirmation email to:", email)
+
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: email.trim().toLowerCase(),
+      })
+
+      if (error) {
+        console.error("[AuthService] Resend confirmation error:", error)
+        throw new Error(`Failed to resend confirmation email: ${error.message}`)
+      }
+
+      console.log("[AuthService] Confirmation email sent successfully")
+    } catch (error: any) {
+      console.error("[AuthService] Resend confirmation failed:", error)
+      throw error
     }
   }
 }

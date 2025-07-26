@@ -11,7 +11,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AuthService } from "@/lib/auth"
 import { SUPABASE_READY } from "@/lib/supabase"
 import { toast } from "@/hooks/use-toast"
-import { Info, AlertTriangle, TestTube, CheckCircle, XCircle } from "lucide-react"
+import { Info, AlertTriangle, TestTube, CheckCircle, XCircle, Mail, RefreshCw } from "lucide-react"
 
 interface AuthFormProps {
   onAuthSuccess: () => void
@@ -28,6 +28,7 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
   })
   const [debugMode, setDebugMode] = useState(false)
   const [debugInfo, setDebugInfo] = useState<any>(null)
+  const [emailConfirmationNeeded, setEmailConfirmationNeeded] = useState<string | null>(null)
 
   const runDebug = async () => {
     try {
@@ -54,6 +55,25 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
     }
   }
 
+  const handleResendConfirmation = async (email: string) => {
+    setIsLoading(true)
+    try {
+      await AuthService.resendConfirmation(email)
+      toast({
+        title: "Confirmation email sent!",
+        description: `Please check your email (${email}) for the confirmation link.`,
+      })
+    } catch (error: any) {
+      toast({
+        title: "Failed to resend email",
+        description: error.message,
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -67,6 +87,7 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
     }
 
     setIsLoading(true)
+    setEmailConfirmationNeeded(null)
 
     try {
       console.log("[AuthForm] Attempting signin...")
@@ -82,18 +103,28 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
 
       let errorMessage = error.message || "An unexpected error occurred"
 
-      // Provide helpful error messages
-      if (errorMessage.includes("Invalid login credentials")) {
-        errorMessage = "Invalid email or password. Please check your credentials and try again."
-      } else if (errorMessage.includes("Email not confirmed")) {
-        errorMessage = "Please check your email and click the confirmation link before signing in."
-      }
+      // Handle email confirmation needed
+      if (errorMessage.includes("confirmation link")) {
+        setEmailConfirmationNeeded(signInData.email)
+        toast({
+          title: "Email confirmation required",
+          description: errorMessage,
+          variant: "destructive",
+        })
+      } else {
+        // Provide helpful error messages for other cases
+        if (errorMessage.includes("Invalid login credentials")) {
+          errorMessage = "Invalid email or password. Please check your credentials and try again."
+        } else if (errorMessage.includes("Too many requests")) {
+          errorMessage = "Too many login attempts. Please wait a moment and try again."
+        }
 
-      toast({
-        title: "Sign in failed",
-        description: errorMessage,
-        variant: "destructive",
-      })
+        toast({
+          title: "Sign in failed",
+          description: errorMessage,
+          variant: "destructive",
+        })
+      }
     } finally {
       setIsLoading(false)
     }
@@ -131,19 +162,28 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
     }
 
     setIsLoading(true)
+    setEmailConfirmationNeeded(null)
 
     try {
       console.log("[AuthForm] Attempting signup...")
-      await AuthService.signUp(signUpData.email, signUpData.password, {
+      const result = await AuthService.signUp(signUpData.email, signUpData.password, {
         username: signUpData.username,
         full_name: signUpData.fullName || signUpData.username,
       })
 
-      toast({
-        title: "Account created!",
-        description: `Welcome ${signUpData.fullName || signUpData.username}! You are now signed in.`,
-      })
-      onAuthSuccess()
+      if (result.needsEmailConfirmation) {
+        setEmailConfirmationNeeded(signUpData.email)
+        toast({
+          title: "Check your email!",
+          description: result.message,
+        })
+      } else {
+        toast({
+          title: "Account created!",
+          description: `Welcome ${signUpData.fullName || signUpData.username}! You are now signed in.`,
+        })
+        onAuthSuccess()
+      }
     } catch (error: any) {
       console.error("[AuthForm] Signup error:", error)
 
@@ -156,6 +196,8 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
         errorMessage = "Password must be at least 6 characters long."
       } else if (errorMessage.includes("row-level security")) {
         errorMessage = "Account creation temporarily blocked. Please try again in a moment or contact support."
+      } else if (errorMessage.includes("Invalid email")) {
+        errorMessage = "Please enter a valid email address."
       }
 
       toast({
@@ -170,6 +212,7 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
 
   const handleTestAccount = async () => {
     setIsLoading(true)
+    setEmailConfirmationNeeded(null)
 
     try {
       // Try to sign up with a test account
@@ -180,16 +223,24 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
 
       console.log("[AuthForm] Creating test account:", { testEmail, testUsername })
 
-      await AuthService.signUp(testEmail, testPassword, {
+      const result = await AuthService.signUp(testEmail, testPassword, {
         username: testUsername,
         full_name: "Test User",
       })
 
-      toast({
-        title: "Test account created!",
-        description: `Created and signed in as ${testEmail}`,
-      })
-      onAuthSuccess()
+      if (result.needsEmailConfirmation) {
+        setEmailConfirmationNeeded(testEmail)
+        toast({
+          title: "Test account created!",
+          description: "Please check the test email for confirmation (in development, this should be automatic).",
+        })
+      } else {
+        toast({
+          title: "Test account created!",
+          description: `Created and signed in as ${testEmail}`,
+        })
+        onAuthSuccess()
+      }
     } catch (error: any) {
       console.error("[AuthForm] Test account error:", error)
       toast({
@@ -221,6 +272,32 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
                 <strong>Warning:</strong> Supabase connection not configured. Some features may not work.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {emailConfirmationNeeded && (
+            <Alert>
+              <Mail className="h-4 w-4" />
+              <AlertDescription>
+                <div className="space-y-2">
+                  <p>
+                    <strong>Email confirmation required</strong>
+                  </p>
+                  <p className="text-sm">
+                    Please check your email ({emailConfirmationNeeded}) and click the confirmation link.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleResendConfirmation(emailConfirmationNeeded)}
+                    disabled={isLoading}
+                    className="w-full"
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Resend confirmation email
+                  </Button>
+                </div>
               </AlertDescription>
             </Alert>
           )}
@@ -360,6 +437,10 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
                     <div className="flex items-center gap-1">
                       {getDebugStatusIcon(debugInfo.user)}
                       <span>Auth User</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {getDebugStatusIcon(debugInfo.emailConfirmed)}
+                      <span>Email Confirmed</span>
                     </div>
                     <div className="flex items-center gap-1">
                       {getDebugStatusIcon(SUPABASE_READY)}
