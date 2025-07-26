@@ -1,19 +1,36 @@
--- Disable email confirmation for development
--- This allows users to sign up and sign in immediately without email verification
+-- KROK 1: Wyłącz potwierdzanie emaili
+-- Uruchom to w SQL Editor w Supabase
 
--- Update auth configuration to disable email confirmations
+-- Sprawdź obecne ustawienia
+SELECT 
+    raw_app_meta_data,
+    raw_user_meta_data,
+    email_confirmed_at,
+    created_at
+FROM auth.users 
+LIMIT 5;
+
+-- Wyłącz potwierdzanie emaili (metoda 1)
 UPDATE auth.config 
-SET enable_email_confirmations = false;
+SET enable_email_confirmations = false
+WHERE id = 'auth';
 
--- Alternative method if the above doesn't work
--- You can also set this in your Supabase dashboard:
--- Authentication > Settings > Email Auth > Enable email confirmations = OFF
+-- Jeśli powyższe nie działa, spróbuj tej metody:
+INSERT INTO auth.config (id, enable_email_confirmations)
+VALUES ('auth', false)
+ON CONFLICT (id) 
+DO UPDATE SET enable_email_confirmations = false;
 
--- Check current configuration
+-- Sprawdź czy się zmieniło
 SELECT * FROM auth.config;
 
--- If you want to re-enable email confirmations later (for production):
--- UPDATE auth.config SET enable_email_confirmations = true;
+-- Jeśli nadal nie działa, ustaw globalnie:
+ALTER DATABASE postgres SET "app.settings.auth.enable_email_confirmations" = 'false';
 
--- Note: After running this script, restart your Supabase instance or wait a few minutes
--- for the changes to take effect.
+-- Test - sprawdź czy można tworzyć użytkowników bez potwierdzenia
+SELECT 
+    CASE 
+        WHEN EXISTS (SELECT 1 FROM auth.config WHERE enable_email_confirmations = false) 
+        THEN 'Email confirmation DISABLED ✅' 
+        ELSE 'Email confirmation ENABLED ❌' 
+    END as status;
