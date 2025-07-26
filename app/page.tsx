@@ -6,11 +6,13 @@ import { ChatList } from "@/components/chat/chat-list"
 import { ChatWindow } from "@/components/chat/chat-window"
 import { NewChatDialog } from "@/components/chat/new-chat-dialog"
 import { SettingsDialog } from "@/components/settings/settings-dialog"
+import { SupabaseSetupGuide } from "@/components/setup/supabase-setup-guide"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { AuthService } from "@/lib/auth"
 import { useRealtimePresence } from "@/hooks/use-realtime"
+import { SUPABASE_READY } from "@/lib/supabase"
 import type { User, Chat } from "@/lib/supabase"
 import { LogOut, Moon, Sun, Bell } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
@@ -21,10 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-// Import the ContactsManager component
 import { ContactsManager } from "@/components/contacts/contacts-manager"
-// Import the new component
-import { SupabaseConnectionTester } from "@/components/debug/supabase-connection-tester" // Add this line
 
 export default function Home() {
   const [currentUser, setCurrentUser] = useState<User | null>(null)
@@ -95,6 +94,11 @@ export default function Home() {
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500" />
       </div>
     )
+  }
+
+  // Show setup guide if Supabase is not configured
+  if (!SUPABASE_READY) {
+    return <SupabaseSetupGuide />
   }
 
   if (!currentUser) {
@@ -181,9 +185,6 @@ export default function Home() {
           </div>
         )}
       </div>
-
-      {/* Supabase Connection Tester - Add this line */}
-      <SupabaseConnectionTester />
     </div>
   )
 }

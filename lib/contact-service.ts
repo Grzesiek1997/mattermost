@@ -21,260 +21,221 @@ export interface SearchableUser extends User {
   contact_status?: "none" | "pending" | "accepted" | "blocked"
 }
 
+// Enhanced demo users database
+const DEMO_USERS: SearchableUser[] = [
+  {
+    id: "demo-user-1",
+    email: "john.doe@example.com",
+    username: "johndoe",
+    full_name: "John Doe",
+    avatar_url: "/placeholder.svg?height=40&width=40&text=JD",
+    bio: "Software Developer at Tech Corp. Love coding and coffee ☕",
+    phone: "+1-555-0101",
+    is_online: true,
+    last_seen: new Date().toISOString(),
+    created_at: new Date(Date.now() - 86400000 * 30).toISOString(),
+    updated_at: new Date().toISOString(),
+    contact_status: "none",
+  },
+  {
+    id: "demo-user-2",
+    email: "jane.smith@example.com",
+    username: "janesmith",
+    full_name: "Jane Smith",
+    avatar_url: "/placeholder.svg?height=40&width=40&text=JS",
+    bio: "UI/UX Designer | Creative Professional | Dog lover 🐕",
+    phone: "+1-555-0102",
+    is_online: false,
+    last_seen: new Date(Date.now() - 3600000).toISOString(),
+    created_at: new Date(Date.now() - 86400000 * 25).toISOString(),
+    updated_at: new Date().toISOString(),
+    contact_status: "none",
+  },
+  {
+    id: "demo-user-3",
+    email: "mike.wilson@example.com",
+    username: "mikewilson",
+    full_name: "Mike Wilson",
+    avatar_url: "/placeholder.svg?height=40&width=40&text=MW",
+    bio: "Product Manager | Tech Enthusiast | Startup advisor",
+    phone: "+1-555-0103",
+    is_online: true,
+    last_seen: new Date().toISOString(),
+    created_at: new Date(Date.now() - 86400000 * 20).toISOString(),
+    updated_at: new Date().toISOString(),
+    contact_status: "pending",
+  },
+  {
+    id: "demo-user-4",
+    email: "sarah.johnson@example.com",
+    username: "sarahj",
+    full_name: "Sarah Johnson",
+    avatar_url: "/placeholder.svg?height=40&width=40&text=SJ",
+    bio: "Marketing Specialist | Content Creator | Travel enthusiast ✈️",
+    phone: "+1-555-0104",
+    is_online: false,
+    last_seen: new Date(Date.now() - 7200000).toISOString(),
+    created_at: new Date(Date.now() - 86400000 * 15).toISOString(),
+    updated_at: new Date().toISOString(),
+    contact_status: "accepted",
+  },
+  {
+    id: "demo-user-5",
+    email: "alex.brown@example.com",
+    username: "alexbrown",
+    full_name: "Alex Brown",
+    avatar_url: "/placeholder.svg?height=40&width=40&text=AB",
+    bio: "Data Scientist | AI/ML Engineer | Python enthusiast 🐍",
+    phone: "+1-555-0105",
+    is_online: true,
+    last_seen: new Date().toISOString(),
+    created_at: new Date(Date.now() - 86400000 * 10).toISOString(),
+    updated_at: new Date().toISOString(),
+    contact_status: "none",
+  },
+  {
+    id: "demo-user-6",
+    email: "emma.davis@example.com",
+    username: "emmadavis",
+    full_name: "Emma Davis",
+    avatar_url: "/placeholder.svg?height=40&width=40&text=ED",
+    bio: "Frontend Developer | React specialist | Open source contributor",
+    phone: "+1-555-0106",
+    is_online: false,
+    last_seen: new Date(Date.now() - 1800000).toISOString(),
+    created_at: new Date(Date.now() - 86400000 * 8).toISOString(),
+    updated_at: new Date().toISOString(),
+    contact_status: "none",
+  },
+  {
+    id: "demo-user-7",
+    email: "tom.miller@example.com",
+    username: "tommiller",
+    full_name: "Tom Miller",
+    avatar_url: "/placeholder.svg?height=40&width=40&text=TM",
+    bio: "Backend Engineer | Node.js expert | DevOps enthusiast",
+    phone: "+1-555-0107",
+    is_online: true,
+    last_seen: new Date().toISOString(),
+    created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
+    updated_at: new Date().toISOString(),
+    contact_status: "none",
+  },
+  {
+    id: "demo-user-8",
+    email: "lisa.garcia@example.com",
+    username: "lisagarcia",
+    full_name: "Lisa Garcia",
+    avatar_url: "/placeholder.svg?height=40&width=40&text=LG",
+    bio: "Graphic Designer | Brand strategist | Coffee addict ☕",
+    phone: "+1-555-0108",
+    is_online: false,
+    last_seen: new Date(Date.now() - 5400000).toISOString(),
+    created_at: new Date(Date.now() - 86400000 * 12).toISOString(),
+    updated_at: new Date().toISOString(),
+    contact_status: "none",
+  },
+  {
+    id: "demo-user-9",
+    email: "david.lee@example.com",
+    username: "davidlee",
+    full_name: "David Lee",
+    avatar_url: "/placeholder.svg?height=40&width=40&text=DL",
+    bio: "Mobile Developer | iOS & Android | Tech blogger",
+    phone: "+1-555-0109",
+    is_online: true,
+    last_seen: new Date().toISOString(),
+    created_at: new Date(Date.now() - 86400000 * 18).toISOString(),
+    updated_at: new Date().toISOString(),
+    contact_status: "none",
+  },
+  {
+    id: "demo-user-10",
+    email: "anna.white@example.com",
+    username: "annawhite",
+    full_name: "Anna White",
+    avatar_url: "/placeholder.svg?height=40&width=40&text=AW",
+    bio: "Project Manager | Agile coach | Team builder 👥",
+    phone: "+1-555-0110",
+    is_online: false,
+    last_seen: new Date(Date.now() - 9000000).toISOString(),
+    created_at: new Date(Date.now() - 86400000 * 22).toISOString(),
+    updated_at: new Date().toISOString(),
+    contact_status: "none",
+  },
+]
+
 export class ContactService {
   // Search for users by username, name, or email
   static async searchUsers(query: string, limit = 20): Promise<SearchableUser[]> {
     console.log(`[ContactService] searchUsers called with query: "${query}", limit: ${limit}`)
-    console.log(`[ContactService] SUPABASE_READY: ${SUPABASE_READY}`)
 
     if (!SUPABASE_READY) {
-      console.log("[ContactService] Using demo mode for search")
+      console.log("[ContactService] Using enhanced demo mode for search")
 
-      // Enhanced demo mode with more realistic users
-      const mockUsers: SearchableUser[] = [
-        {
-          id: "demo-user-1",
-          email: "john.doe@example.com",
-          username: "johndoe",
-          full_name: "John Doe",
-          avatar_url: "/placeholder.svg",
-          bio: "Software Developer at Tech Corp",
-          phone: null,
-          is_online: true,
-          last_seen: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          contact_status: "none",
-        },
-        {
-          id: "demo-user-2",
-          email: "jane.smith@example.com",
-          username: "janesmith",
-          full_name: "Jane Smith",
-          avatar_url: "/placeholder.svg",
-          bio: "UI/UX Designer | Creative Professional",
-          phone: null,
-          is_online: false,
-          last_seen: new Date(Date.now() - 3600000).toISOString(),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          contact_status: "none",
-        },
-        {
-          id: "demo-user-3",
-          email: "mike.wilson@example.com",
-          username: "mikewilson",
-          full_name: "Mike Wilson",
-          avatar_url: "/placeholder.svg",
-          bio: "Product Manager | Tech Enthusiast",
-          phone: null,
-          is_online: true,
-          last_seen: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          contact_status: "pending",
-        },
-        {
-          id: "demo-user-4",
-          email: "sarah.johnson@example.com",
-          username: "sarahj",
-          full_name: "Sarah Johnson",
-          avatar_url: "/placeholder.svg",
-          bio: "Marketing Specialist",
-          phone: null,
-          is_online: false,
-          last_seen: new Date(Date.now() - 7200000).toISOString(),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          contact_status: "accepted",
-        },
-        {
-          id: "demo-user-5",
-          email: "alex.brown@example.com",
-          username: "alexbrown",
-          full_name: "Alex Brown",
-          avatar_url: "/placeholder.svg",
-          bio: "Data Scientist",
-          phone: null,
-          is_online: true,
-          last_seen: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          contact_status: "none",
-        },
-        {
-          id: "demo-user-6",
-          email: "emma.davis@example.com",
-          username: "emmadavis",
-          full_name: "Emma Davis",
-          avatar_url: "/placeholder.svg",
-          bio: "Frontend Developer",
-          phone: null,
-          is_online: false,
-          last_seen: new Date(Date.now() - 1800000).toISOString(),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          contact_status: "none",
-        },
-        {
-          id: "demo-user-7",
-          email: "tom.miller@example.com",
-          username: "tommiller",
-          full_name: "Tom Miller",
-          avatar_url: "/placeholder.svg",
-          bio: "Backend Engineer",
-          phone: null,
-          is_online: true,
-          last_seen: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          contact_status: "none",
-        },
-      ]
-
-      // More flexible search - case insensitive and partial matching
+      // Enhanced search with better matching
       const searchTerm = query.toLowerCase().trim()
-      const filtered = mockUsers.filter(
-        (user) =>
-          user.username?.toLowerCase().includes(searchTerm) ||
-          user.full_name?.toLowerCase().includes(searchTerm) ||
-          user.email.toLowerCase().includes(searchTerm) ||
-          user.bio?.toLowerCase().includes(searchTerm),
-      )
 
-      console.log(
-        `[ContactService] Demo mode - searched "${query}", found ${filtered.length} users:`,
-        filtered.map((u) => ({ username: u.username, email: u.email })),
-      )
+      if (searchTerm.length < 1) {
+        return []
+      }
+
+      const filtered = DEMO_USERS.filter((user) => {
+        const matchUsername = user.username?.toLowerCase().includes(searchTerm)
+        const matchFullName = user.full_name?.toLowerCase().includes(searchTerm)
+        const matchEmail = user.email.toLowerCase().includes(searchTerm)
+        const matchBio = user.bio?.toLowerCase().includes(searchTerm)
+
+        return matchUsername || matchFullName || matchEmail || matchBio
+      }).slice(0, limit)
+
+      console.log(`[ContactService] Demo search found ${filtered.length} users for "${query}"`)
       return filtered
     }
 
     try {
-      // Test basic connection first
-      console.log("[ContactService] Testing Supabase connection...")
-      const { data: testData, error: testError } = await supabase
-        .from("users")
-        .select("count", { count: "exact", head: true })
-
-      if (testError) {
-        console.error("[ContactService] Supabase connection test failed:", testError)
-        throw new Error(`Database connection failed: ${testError.message}`)
-      }
-
-      console.log(`[ContactService] Connection successful, total users in DB: ${testData}`)
-
       // Get current user
       const {
         data: { user },
       } = await supabase.auth.getUser()
 
-      console.log(
-        "[ContactService] Current auth user:",
-        user ? { id: user.id, email: user.email } : "not authenticated",
-      )
-
       if (!user) {
-        console.error("[ContactService] User not authenticated")
-        // In demo mode, still return results
-        console.log("[ContactService] Falling back to demo mode due to no auth")
-        return this.searchUsers(query, limit) // This will trigger demo mode
+        console.log("[ContactService] No authenticated user, falling back to demo")
+        return this.searchUsers(query, limit) // Fallback to demo
       }
 
       console.log(`[ContactService] Authenticated user: ${user.id}`)
 
-      // Try direct query first (simpler approach)
-      console.log("[ContactService] Trying direct query...")
+      // Try direct query
       const { data: directData, error: directError } = await supabase
         .from("users")
-        .select("id, email, username, full_name, avatar_url, bio, is_online, last_seen, created_at, updated_at")
+        .select("id, email, username, full_name, avatar_url, bio, phone, is_online, last_seen, created_at, updated_at")
         .or(`username.ilike.%${query}%,full_name.ilike.%${query}%,email.ilike.%${query}%`)
         .neq("id", user.id)
         .limit(limit)
 
       if (directError) {
-        console.error("[ContactService] Direct query failed:", directError)
-
-        // Try even simpler query
-        console.log("[ContactService] Trying simple select all...")
-        const { data: allData, error: allError } = await supabase
-          .from("users")
-          .select("id, email, username, full_name")
-          .limit(10)
-
-        if (allError) {
-          console.error("[ContactService] Simple query also failed:", allError)
-          throw new Error(`All database queries failed: ${allError.message}`)
-        }
-
-        console.log("[ContactService] Simple query results:", allData)
-
-        // Filter manually
-        const filtered = (allData || [])
-          .filter((u) => u.id !== user.id)
-          .filter(
-            (u) =>
-              u.username?.toLowerCase().includes(query.toLowerCase()) ||
-              u.full_name?.toLowerCase().includes(query.toLowerCase()) ||
-              u.email?.toLowerCase().includes(query.toLowerCase()),
-          )
-          .map((u) => ({ ...u, contact_status: "none" as const }))
-
-        console.log(`[ContactService] Manual filter results: ${filtered.length}`)
-        return filtered
+        console.error("[ContactService] Database query failed:", directError)
+        console.log("[ContactService] Falling back to demo mode")
+        return this.searchUsers(query, limit) // Fallback to demo
       }
 
-      console.log(`[ContactService] Direct query success - found ${directData?.length || 0} users`)
-      console.log(
-        "[ContactService] Direct query results:",
-        directData?.map((u) => ({ username: u.username, email: u.email })),
-      )
-
+      console.log(`[ContactService] Database search found ${directData?.length || 0} users`)
       return (directData || []).map((u) => ({ ...u, contact_status: "none" as const }))
     } catch (error: any) {
-      console.error("[ContactService] Search users error:", error)
+      console.error("[ContactService] Search error:", error)
+      console.log("[ContactService] Using demo fallback")
 
-      // Final fallback to demo mode
-      console.log("[ContactService] All real queries failed, using demo mode")
-      const mockUsers: SearchableUser[] = [
-        {
-          id: "fallback-user-1",
-          email: "test1@example.com",
-          username: "testuser1",
-          full_name: "Test User 1",
-          avatar_url: "/placeholder.svg",
-          bio: "Fallback test user",
-          phone: null,
-          is_online: true,
-          last_seen: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          contact_status: "none",
-        },
-        {
-          id: "fallback-user-2",
-          email: "test2@example.com",
-          username: "testuser2",
-          full_name: "Test User 2",
-          avatar_url: "/placeholder.svg",
-          bio: "Another fallback user",
-          phone: null,
-          is_online: false,
-          last_seen: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          contact_status: "none",
-        },
-      ]
-
+      // Return demo results
       const searchTerm = query.toLowerCase().trim()
-      const filtered = mockUsers.filter(
-        (user) =>
-          user.username?.toLowerCase().includes(searchTerm) ||
-          user.full_name?.toLowerCase().includes(searchTerm) ||
-          user.email.toLowerCase().includes(searchTerm),
-      )
+      const filtered = DEMO_USERS.filter((user) => {
+        const matchUsername = user.username?.toLowerCase().includes(searchTerm)
+        const matchFullName = user.full_name?.toLowerCase().includes(searchTerm)
+        const matchEmail = user.email.toLowerCase().includes(searchTerm)
 
-      console.log(`[ContactService] Fallback mode - found ${filtered.length} users`)
+        return matchUsername || matchFullName || matchEmail
+      }).slice(0, limit)
+
       return filtered
     }
   }
@@ -282,7 +243,9 @@ export class ContactService {
   // Send contact invitation
   static async sendContactInvitation(receiverId: string) {
     if (!SUPABASE_READY) {
-      console.warn("[ContactService] Demo mode - invitation sent (mock)")
+      console.log("[ContactService] Demo mode - invitation sent (mock)")
+      // Simulate delay
+      await new Promise((resolve) => setTimeout(resolve, 500))
       return { success: true }
     }
 
@@ -342,7 +305,8 @@ export class ContactService {
   // Accept contact invitation
   static async acceptContactInvitation(invitationId: string) {
     if (!SUPABASE_READY) {
-      console.warn("[ContactService] Demo mode - invitation accepted (mock)")
+      console.log("[ContactService] Demo mode - invitation accepted (mock)")
+      await new Promise((resolve) => setTimeout(resolve, 500))
       return { success: true }
     }
 
@@ -384,8 +348,8 @@ export class ContactService {
       // Create reverse relationship (mutual contact)
       const { error: reverseError } = await supabase.from("contacts").upsert(
         {
-          user_id: invitation.contact_user_id, // The person who accepted (current user)
-          contact_user_id: invitation.user_id, // The person who sent the invitation
+          user_id: invitation.contact_user_id,
+          contact_user_id: invitation.user_id,
           status: "accepted",
           accepted_at: new Date().toISOString(),
         },
@@ -410,7 +374,8 @@ export class ContactService {
   // Reject contact invitation
   static async rejectContactInvitation(invitationId: string) {
     if (!SUPABASE_READY) {
-      console.warn("[ContactService] Demo mode - invitation rejected (mock)")
+      console.log("[ContactService] Demo mode - invitation rejected (mock)")
+      await new Promise((resolve) => setTimeout(resolve, 500))
       return { success: true }
     }
 
@@ -452,7 +417,7 @@ export class ContactService {
           invited_at: new Date(Date.now() - 3600000).toISOString(),
           inviter_username: "johndoe",
           inviter_full_name: "John Doe",
-          inviter_avatar_url: "/placeholder.svg",
+          inviter_avatar_url: "/placeholder.svg?height=40&width=40&text=JD",
         },
         {
           id: "demo-inv-2",
@@ -462,7 +427,7 @@ export class ContactService {
           invited_at: new Date(Date.now() - 7200000).toISOString(),
           inviter_username: "mikewilson",
           inviter_full_name: "Mike Wilson",
-          inviter_avatar_url: "/placeholder.svg",
+          inviter_avatar_url: "/placeholder.svg?height=40&width=40&text=MW",
         },
       ]
       return mockInvitations
@@ -516,9 +481,9 @@ export class ContactService {
           email: "sarah.johnson@example.com",
           username: "sarahj",
           full_name: "Sarah Johnson",
-          avatar_url: "/placeholder.svg",
+          avatar_url: "/placeholder.svg?height=40&width=40&text=SJ",
           bio: "Marketing Specialist",
-          phone: null,
+          phone: "+1-555-0104",
           is_online: false,
           last_seen: new Date(Date.now() - 7200000).toISOString(),
           created_at: new Date().toISOString(),
@@ -539,7 +504,7 @@ export class ContactService {
           contact_user_id,
           accepted_at,
           contact:contact_user_id (
-            id, email, username, full_name, avatar_url, bio, is_online, last_seen
+            id, email, username, full_name, avatar_url, bio, phone, is_online, last_seen, created_at, updated_at
           )
         `)
         .eq("user_id", user.id)
@@ -563,7 +528,8 @@ export class ContactService {
   // Block contact
   static async blockContact(contactId: string) {
     if (!SUPABASE_READY) {
-      console.warn("[ContactService] Demo mode - contact blocked (mock)")
+      console.log("[ContactService] Demo mode - contact blocked (mock)")
+      await new Promise((resolve) => setTimeout(resolve, 500))
       return { success: true }
     }
 
@@ -598,7 +564,8 @@ export class ContactService {
   // Remove contact
   static async removeContact(contactId: string) {
     if (!SUPABASE_READY) {
-      console.warn("[ContactService] Demo mode - contact removed (mock)")
+      console.log("[ContactService] Demo mode - contact removed (mock)")
+      await new Promise((resolve) => setTimeout(resolve, 500))
       return { success: true }
     }
 
@@ -632,7 +599,8 @@ export class ContactService {
   // Start direct chat with contact
   static async startDirectChat(contactId: string) {
     if (!SUPABASE_READY) {
-      console.warn("[ContactService] Demo mode - direct chat started (mock)")
+      console.log("[ContactService] Demo mode - direct chat started (mock)")
+      await new Promise((resolve) => setTimeout(resolve, 500))
       return { id: "demo-chat-" + contactId }
     }
 

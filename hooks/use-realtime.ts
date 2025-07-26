@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { supabase } from "@/lib/supabase"
+import { supabase, SUPABASE_READY } from "@/lib/supabase"
 import type { Message, TypingIndicator } from "@/lib/supabase"
 
 export function useRealtimeMessages(chatId: string) {
@@ -9,7 +9,9 @@ export function useRealtimeMessages(chatId: string) {
   const [typingUsers, setTypingUsers] = useState<TypingIndicator[]>([])
 
   useEffect(() => {
-    if (!chatId) return
+    if (!chatId || !SUPABASE_READY) return
+
+    console.log(`[useRealtimeMessages] Setting up realtime for chat: ${chatId}`)
 
     // Subscribe to new messages
     const messagesChannel = supabase
@@ -94,7 +96,6 @@ export function useRealtimeMessages(chatId: string) {
         },
         async () => {
           // Refresh messages to get updated reactions
-          // In a production app, you'd want to be more selective here
           const { data } = await supabase
             .from("messages")
             .select(`
@@ -151,6 +152,7 @@ export function useRealtimeMessages(chatId: string) {
       .subscribe()
 
     return () => {
+      console.log(`[useRealtimeMessages] Cleaning up realtime for chat: ${chatId}`)
       supabase.removeChannel(messagesChannel)
       supabase.removeChannel(reactionsChannel)
       supabase.removeChannel(typingChannel)
@@ -164,6 +166,14 @@ export function useRealtimePresence() {
   const [onlineUsers, setOnlineUsers] = useState<string[]>([])
 
   useEffect(() => {
+    if (!SUPABASE_READY) {
+      // Return mock online users for demo
+      setOnlineUsers(["demo-user-1", "demo-user-5", "demo-user-7", "demo-user-9"])
+      return
+    }
+
+    console.log("[useRealtimePresence] Setting up presence tracking")
+
     const channel = supabase
       .channel("online-users")
       .on(
@@ -184,6 +194,7 @@ export function useRealtimePresence() {
       .subscribe()
 
     return () => {
+      console.log("[useRealtimePresence] Cleaning up presence tracking")
       supabase.removeChannel(channel)
     }
   }, [])

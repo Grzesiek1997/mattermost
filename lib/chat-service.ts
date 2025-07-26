@@ -5,7 +5,8 @@ export class ChatService {
   // Create a new chat
   static async createChat(type: Chat["type"], title?: string, description?: string) {
     if (!SUPABASE_READY) {
-      console.warn("[ChatService] Demo mode - chat created (mock)")
+      console.log("[ChatService] Demo mode - chat created (mock)")
+      await new Promise((resolve) => setTimeout(resolve, 500))
       return {
         id: "demo-chat-" + Math.random().toString(36).slice(2),
         type,
@@ -41,7 +42,7 @@ export class ChatService {
   // Get user's chats
   static async getUserChats(userId: string) {
     if (!SUPABASE_READY) {
-      console.warn("[ChatService] Demo mode - returning empty chat list")
+      console.log("[ChatService] Demo mode - returning empty chat list")
       return []
     }
 
@@ -71,7 +72,7 @@ export class ChatService {
   // Get chat messages with pagination
   static async getChatMessages(chatId: string, limit = 50, offset = 0) {
     if (!SUPABASE_READY) {
-      console.warn("[ChatService] Demo mode - returning empty messages")
+      console.log("[ChatService] Demo mode - returning empty messages")
       return []
     }
 
@@ -115,7 +116,8 @@ export class ChatService {
     fileSize?: number,
   ) {
     if (!SUPABASE_READY) {
-      console.warn("[ChatService] Demo mode - message sent (mock)")
+      console.log("[ChatService] Demo mode - message sent (mock)")
+      await new Promise((resolve) => setTimeout(resolve, 300))
       return {
         id: "demo-msg-" + Math.random().toString(36).slice(2),
         chat_id: chatId,
@@ -168,7 +170,8 @@ export class ChatService {
   // Add reaction to message
   static async addReaction(messageId: string, emoji: string) {
     if (!SUPABASE_READY) {
-      console.warn("[ChatService] Demo mode - reaction added (mock)")
+      console.log("[ChatService] Demo mode - reaction added (mock)")
+      await new Promise((resolve) => setTimeout(resolve, 200))
       return { success: true }
     }
 
@@ -194,7 +197,8 @@ export class ChatService {
   // Remove reaction from message
   static async removeReaction(messageId: string, emoji: string) {
     if (!SUPABASE_READY) {
-      console.warn("[ChatService] Demo mode - reaction removed (mock)")
+      console.log("[ChatService] Demo mode - reaction removed (mock)")
+      await new Promise((resolve) => setTimeout(resolve, 200))
       return { success: true }
     }
 
@@ -287,6 +291,43 @@ export class ChatService {
       if (error) console.error("Mark messages as read error:", error)
     } catch (error) {
       console.error("Mark messages as read error:", error)
+    }
+  }
+
+  // Search messages
+  static async searchMessages(query: string, limit = 50): Promise<Message[]> {
+    if (!SUPABASE_READY) {
+      console.log("[ChatService] Demo mode - message search returns empty list")
+      return []
+    }
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return []
+
+      const { data, error } = await supabase
+        .from("messages")
+        .select(`
+          *,
+          user:user_id (
+            id, username, full_name, avatar_url
+          ),
+          chats:chat_id (
+            id, title, type
+          )
+        `)
+        .ilike("content", `%${query}%`)
+        .eq("is_deleted", false)
+        .order("created_at", { ascending: false })
+        .limit(limit)
+
+      if (error) throw error
+      return data || []
+    } catch (error) {
+      console.error("Search messages error:", error)
+      return []
     }
   }
 }
