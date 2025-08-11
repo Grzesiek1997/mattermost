@@ -1,16 +1,19 @@
-import { createClient } from "@supabase/supabase-js"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY
-
-// Check if Supabase is properly configured
-export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
+// Check if Supabase environment variables are available
+export const isSupabaseConfigured =
+  typeof process.env.NEXT_PUBLIC_SUPABASE_URL === "string" &&
+  process.env.NEXT_PUBLIC_SUPABASE_URL.length > 0 &&
+  typeof process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY === "string" &&
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY.length > 0
 
 // Debug logging
 console.log("[Supabase] Environment check:", {
-  hasUrl: !!supabaseUrl,
-  hasKey: !!supabaseAnonKey,
-  urlPreview: supabaseUrl ? supabaseUrl.substring(0, 30) + "..." : "missing",
+  hasUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+  hasKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  urlPreview: process.env.NEXT_PUBLIC_SUPABASE_URL
+    ? process.env.NEXT_PUBLIC_SUPABASE_URL.substring(0, 30) + "..."
+    : "missing",
   configured: isSupabaseConfigured,
 })
 
@@ -18,37 +21,13 @@ if (!isSupabaseConfigured) {
   console.warn("[Supabase] Missing environment variables. Please configure Supabase integration in Project Settings.")
 }
 
-const finalUrl = supabaseUrl
-const finalKey = supabaseAnonKey
-
-if (!finalUrl || !finalKey) {
-  console.error("[Supabase] Configuration missing. Please set up Supabase integration in Project Settings.")
-}
-
-// Create Supabase client with optimized settings
-export const supabase = isSupabaseConfigured
-  ? createClient(finalUrl!, finalKey!, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
-      },
-      realtime: {
-        params: { eventsPerSecond: 10 },
-      },
-      global: {
-        headers: {
-          "x-my-custom-header": "telegram-clone",
-        },
-      },
-    })
-  : null
+export const supabase = createClientComponentClient()
 
 // Added back SUPABASE_READY export for compatibility
 export const SUPABASE_READY = isSupabaseConfigured
 
 async function testConnection() {
-  if (!isSupabaseConfigured || !supabase) {
+  if (!isSupabaseConfigured) {
     console.warn("[Supabase] Skipping connection test - Supabase not configured")
     return false
   }
