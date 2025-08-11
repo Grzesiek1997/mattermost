@@ -8,6 +8,7 @@ import { NewChatDialog } from "@/components/chat/new-chat-dialog"
 import { SettingsDialog } from "@/components/settings/settings-dialog"
 import { ConnectionTester } from "@/components/debug/connection-tester"
 import { AdminPanel } from "@/components/admin/admin-panel"
+import { NotificationPanel } from "@/components/notifications/notification-panel"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -34,6 +35,7 @@ export default function Home() {
   const [darkMode, setDarkMode] = useState(false)
   const [showTester, setShowTester] = useState(false)
   const [showAdmin, setShowAdmin] = useState(false)
+  const [showNotifications, setShowNotifications] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [authChecked, setAuthChecked] = useState(false)
   const onlineUsers = useRealtimePresence()
@@ -136,6 +138,22 @@ export default function Home() {
     return <AdminPanel currentUser={currentUser} onClose={() => setShowAdmin(false)} />
   }
 
+  // Show notification panel
+  if (showNotifications && currentUser) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="p-4">
+          <Button onClick={() => setShowNotifications(false)} variant="outline" size="sm">
+            ← Back to App
+          </Button>
+        </div>
+        <div className="max-w-2xl mx-auto p-4">
+          <NotificationPanel onNotificationHandled={() => {}} />
+        </div>
+      </div>
+    )
+  }
+
   // Show connection tester
   if (showTester) {
     return (
@@ -225,7 +243,7 @@ export default function Home() {
                     {darkMode ? <Sun className="h-4 w-4 mr-2" /> : <Moon className="h-4 w-4 mr-2" />}
                     {darkMode ? "Light Mode" : "Dark Mode"}
                   </DropdownMenuItem>
-                  <DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setShowNotifications(true)}>
                     <Bell className="h-4 w-4 mr-2" />
                     Notifications
                   </DropdownMenuItem>
@@ -261,6 +279,10 @@ export default function Home() {
               <p className="text-gray-500 mb-6">Select a chat to start messaging or create a new one</p>
               <div className="space-y-3">
                 <NewChatDialog onChatCreated={(chat) => setSelectedChat(chat)} />
+                <Button onClick={() => setShowNotifications(true)} variant="outline" size="sm">
+                  <Bell className="h-4 w-4 mr-2" />
+                  View Notifications
+                </Button>
                 {isAdmin && (
                   <Button onClick={() => setShowAdmin(true)} variant="outline" size="sm">
                     <Shield className="h-4 w-4 mr-2" />
