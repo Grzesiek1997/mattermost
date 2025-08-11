@@ -481,31 +481,15 @@ export class ContactService {
         throw new Error("Not authenticated")
       }
 
-      // Check if direct chat already exists between these users
-      const { data: existingMembers, error: searchError } = await supabase
-        .from("chat_members")
-        .select(`
-          chat_id,
-          chats:chat_id (
-            id, type, created_by
-          )
-        `)
-        .in("user_id", [user.id, contactId])
+      const { data: existingChatId, error: searchError } = await supabase.rpc("find_direct_chat", {
+        user1_id: user.id,
+        user2_id: contactId,
+      })
 
       if (searchError) {
         console.error("[ContactService] Search existing chat error:", searchError)
         throw searchError
       }
-
-      // Find a direct chat that contains both users
-      const chatCounts: Record<string, number> = {}
-      existingMembers?.forEach((member: any) => {
-        if (member.chats?.type === "direct") {
-          chatCounts[member.chat_id] = (chatCounts[member.chat_id] || 0) + 1
-        }
-      })
-
-      const existingChatId = Object.keys(chatCounts).find((chatId) => chatCounts[chatId] === 2)
 
       if (existingChatId) {
         console.log(`[ContactService] ✅ Found existing direct chat: ${existingChatId}`)
