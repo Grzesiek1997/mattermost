@@ -11,7 +11,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AuthService } from "@/lib/auth"
 import { SUPABASE_READY } from "@/lib/supabase"
 import { toast } from "@/hooks/use-toast"
-import { Info, AlertTriangle, TestTube, CheckCircle, XCircle, Mail, RefreshCw, Clock, RotateCcw } from "lucide-react"
+import { AlertTriangle, Mail, RefreshCw, Clock, RotateCcw } from "lucide-react"
 
 interface AuthFormProps {
   onAuthSuccess: () => void
@@ -26,8 +26,6 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
     username: "",
     fullName: "",
   })
-  const [debugMode, setDebugMode] = useState(false)
-  const [debugInfo, setDebugInfo] = useState<any>(null)
   const [emailConfirmationNeeded, setEmailConfirmationNeeded] = useState<string | null>(null)
   const [rateLimitInfo, setRateLimitInfo] = useState({ canSignup: true, cooldownRemaining: 0 })
 
@@ -43,31 +41,6 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
 
     return () => clearInterval(interval)
   }, [])
-
-  const runDebug = async () => {
-    try {
-      setDebugMode(true)
-      setIsLoading(true)
-      console.log("Running comprehensive debug...")
-
-      const info = await AuthService.debugAuth()
-      setDebugInfo(info)
-
-      toast({
-        title: "Debug Complete",
-        description: "Check console and debug info below for details",
-      })
-    } catch (error) {
-      console.error("Debug failed:", error)
-      toast({
-        title: "Debug Failed",
-        description: error.message,
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   const handleResendConfirmation = async (email: string) => {
     setIsLoading(true)
@@ -247,65 +220,6 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
     }
   }
 
-  const handleTestAccount = async () => {
-    // Check rate limiting first
-    if (!rateLimitInfo.canSignup) {
-      toast({
-        title: "Please wait",
-        description: `You can create another account in ${rateLimitInfo.cooldownRemaining} seconds. This prevents spam.`,
-        variant: "destructive",
-      })
-      return
-    }
-
-    setIsLoading(true)
-    setEmailConfirmationNeeded(null)
-
-    try {
-      // Try to sign up with a test account
-      const timestamp = Date.now()
-      const testEmail = `test${timestamp}@example.com`
-      const testPassword = "test123456"
-      const testUsername = `testuser${timestamp}`
-
-      console.log("[AuthForm] Creating test account:", { testEmail, testUsername })
-
-      const result = await AuthService.signUp(testEmail, testPassword, {
-        username: testUsername,
-        full_name: "Test User",
-      })
-
-      if (result.needsEmailConfirmation) {
-        setEmailConfirmationNeeded(testEmail)
-        toast({
-          title: "Test account created!",
-          description: "Please check the test email for confirmation (in development, this should be automatic).",
-        })
-      } else {
-        toast({
-          title: "Test account created!",
-          description: `Created and signed in as ${testEmail}`,
-        })
-        onAuthSuccess()
-      }
-    } catch (error: any) {
-      console.error("[AuthForm] Test account error:", error)
-      toast({
-        title: "Test account failed",
-        description: error.message,
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const getDebugStatusIcon = (status: boolean | undefined) => {
-    if (status === true) return <CheckCircle className="h-4 w-4 text-green-500" />
-    if (status === false) return <XCircle className="h-4 w-4 text-red-500" />
-    return <AlertTriangle className="h-4 w-4 text-yellow-500" />
-  }
-
   return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <Card className="w-full max-w-md">
@@ -478,86 +392,6 @@ export function AuthForm({ onAuthSuccess }: AuthFormProps) {
               </form>
             </TabsContent>
           </Tabs>
-
-          <div className="space-y-2">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-2 text-muted-foreground">Quick Actions</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleTestAccount}
-                disabled={isLoading || !rateLimitInfo.canSignup}
-                title={
-                  !rateLimitInfo.canSignup
-                    ? `Please wait ${rateLimitInfo.cooldownRemaining} seconds`
-                    : "Create a test account"
-                }
-              >
-                {!rateLimitInfo.canSignup ? `Wait ${rateLimitInfo.cooldownRemaining}s` : "Create Test Account"}
-              </Button>
-              <Button type="button" variant="outline" size="sm" onClick={runDebug} disabled={isLoading}>
-                <TestTube className="h-4 w-4 mr-1" />
-                Debug System
-              </Button>
-            </div>
-          </div>
-
-          {debugMode && debugInfo && (
-            <Alert>
-              <Info className="h-4 w-4" />
-              <AlertDescription>
-                <div className="space-y-2">
-                  <strong>System Status:</strong>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="flex items-center gap-1">
-                      {getDebugStatusIcon(debugInfo.connection)}
-                      <span>Database</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      {getDebugStatusIcon(debugInfo.session)}
-                      <span>Session</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      {getDebugStatusIcon(debugInfo.user)}
-                      <span>Auth User</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      {getDebugStatusIcon(debugInfo.emailConfirmed)}
-                      <span>Email Confirmed</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      {getDebugStatusIcon(debugInfo.rateLimiting?.canSignup)}
-                      <span>Can Signup</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      {getDebugStatusIcon(SUPABASE_READY)}
-                      <span>Supabase</span>
-                    </div>
-                  </div>
-                  {debugInfo.rateLimiting?.cooldownRemaining > 0 && (
-                    <p className="text-xs text-orange-600">
-                      Rate limit: {debugInfo.rateLimiting.cooldownRemaining}s remaining
-                    </p>
-                  )}
-                  <details className="mt-2">
-                    <summary className="text-xs cursor-pointer">Show detailed debug info</summary>
-                    <pre className="text-xs mt-2 bg-gray-100 p-2 rounded overflow-auto max-h-32">
-                      {JSON.stringify(debugInfo, null, 2)}
-                    </pre>
-                  </details>
-                </div>
-              </AlertDescription>
-            </Alert>
-          )}
         </CardContent>
       </Card>
     </div>
