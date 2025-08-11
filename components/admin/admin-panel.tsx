@@ -10,11 +10,24 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { AuthService } from "@/lib/auth"
 import { supabase } from "@/lib/supabase"
 import type { User } from "@/lib/supabase"
-import { Users, MessageSquare, Shield, AlertTriangle, Activity, Database, Ban, Eye, Trash2, Search } from "lucide-react"
+import {
+  Users,
+  MessageSquare,
+  Shield,
+  AlertTriangle,
+  Activity,
+  Database,
+  Ban,
+  Eye,
+  Trash2,
+  Search,
+  Settings,
+  Save,
+} from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { formatDistanceToNow } from "date-fns"
 
@@ -38,6 +51,14 @@ interface UserReport {
   reported_user: User
 }
 
+interface SystemSetting {
+  id: string
+  key: string
+  value: any
+  description: string
+  category: string
+}
+
 interface AdminPanelProps {
   currentUser: User
   onClose: () => void
@@ -54,8 +75,10 @@ export function AdminPanel({ currentUser, onClose }: AdminPanelProps) {
   })
   const [users, setUsers] = useState<User[]>([])
   const [reports, setReports] = useState<UserReport[]>([])
+  const [settings, setSettings] = useState<SystemSetting[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
+  const [settingsLoading, setSettingsLoading] = useState(false)
 
   useEffect(() => {
     checkAdminAccess()
@@ -87,7 +110,7 @@ export function AdminPanel({ currentUser, onClose }: AdminPanelProps) {
 
   const loadAdminData = async () => {
     try {
-      // Load stats
+      // Load stats using direct queries instead of RPC
       const [usersCount, onlineCount, chatsCount, messagesCount, reportsCount] = await Promise.all([
         supabase.from("users").select("count", { count: "exact", head: true }),
         supabase.from("users").select("count", { count: "exact", head: true }).eq("is_online", true),
@@ -113,45 +136,87 @@ export function AdminPanel({ currentUser, onClose }: AdminPanelProps) {
 
       setUsers(usersData || [])
 
-      // Load reports
+      // Load reports with user details
       const { data: reportsData } = await supabase
         .from("user_reports")
         .select(`
           *,
-          reporter:reporter_id (id, username, full_name, avatar_url),
-          reported_user:reported_user_id (id, username, full_name, avatar_url)
+          reporter:users!user_reports_reporter_id_fkey (id, username, full_name, avatar_url),
+          reported_user:users!user_reports_reported_user_id_fkey (id, username, full_name, avatar_url)
         `)
         .eq("status", "pending")
         .order("created_at", { ascending: false })
 
       setReports(reportsData || [])
+
+      // Load system settings
+      const { data: settingsData } = await supabase
+        .from("system_settings")
+        .select("*")
+        .order("category", { ascending: true })
+
+      setSettings(settingsData || [])
     } catch (error) {
       console.error("Failed to load admin data:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load admin data",
+        variant: "destructive",
+      })
     }
   }
 
-  const handleBanUser = async (userId: string) => {
+  const handleBanUser = async (userId: string, username: string) => {
     try {
-      // In a real app, you'd have a banned_users table or status field
-      await supabase.from("users").update({ is_online: false }).eq("id", userId)
-
-      // Log admin action
-      await supabase.rpc("log_admin_action", {
-        action_type_param: "ban_user",
-        target_type_param: "user",
-        target_id_param: userId,
+      const { data, error } = await supabase.rpc("admin_manage_user", {
+        target_user_id: userId,
+        action_type: "ban",
+        reason: "Banned by admin",
       })
+
+      if (error) throw error
 
       toast({
         title: "User banned",
-        description: "User has been banned successfully",
+        description: `${username} has been banned successfully`,
       })
 
       loadAdminData()
     } catch (error: any) {
+      console.error("Ban user error:", error)
       toast({
         title: "Error",
-        description: error.message,
+        description: error.message || "Failed to ban user",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleDeleteUser = async (userId: string, username: string) => {
+    if (!confirm(`Are you sure you want to delete user ${username}? This action cannot be undone.`)) {
+      return
+    }
+
+    try {
+      const { data, error } = await supabase.rpc("admin_manage_user", {
+        target_user_id: userId,
+        action_type: "delete",
+        reason: "Deleted by admin",
+      })
+
+      if (error) throw error
+
+      toast({
+        title: "User deleted",
+        description: `${username} has been deleted successfully`,
+      })
+
+      loadAdminData()
+    } catch (error: any) {
+      console.error("Delete user error:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete user",
         variant: "destructive",
       })
     }
@@ -159,16 +224,18 @@ export function AdminPanel({ currentUser, onClose }: AdminPanelProps) {
 
   const handleResolveReport = async (reportId: string, action: "resolved" | "dismissed") => {
     try {
-      await supabase
+      const { error } = await supabase
         .from("user_reports")
         .update({
           status: action,
           reviewed_by: currentUser.id,
           reviewed_at: new Date().toISOString(),
+          resolution_notes: `${action} by admin`,
         })
         .eq("id", reportId)
 
-      // Log admin action
+      if (error) throw error
+
       await supabase.rpc("log_admin_action", {
         action_type_param: `report_${action}`,
         target_type_param: "report",
@@ -182,12 +249,53 @@ export function AdminPanel({ currentUser, onClose }: AdminPanelProps) {
 
       loadAdminData()
     } catch (error: any) {
+      console.error("Resolve report error:", error)
       toast({
         title: "Error",
-        description: error.message,
+        description: error.message || "Failed to update report",
         variant: "destructive",
       })
     }
+  }
+
+  const handleSaveSettings = async () => {
+    try {
+      setSettingsLoading(true)
+
+      for (const setting of settings) {
+        await supabase
+          .from("system_settings")
+          .update({
+            value: setting.value,
+            updated_by: currentUser.id,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", setting.id)
+      }
+
+      toast({
+        title: "Settings saved",
+        description: "System settings have been updated successfully",
+      })
+    } catch (error: any) {
+      console.error("Save settings error:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to save settings",
+        variant: "destructive",
+      })
+    } finally {
+      setSettingsLoading(false)
+    }
+  }
+
+  const updateSetting = (key: string, value: any) => {
+    setSettings((prev) => prev.map((setting) => (setting.key === key ? { ...setting, value } : setting)))
+  }
+
+  const getSetting = (key: string, defaultValue: any = null) => {
+    const setting = settings.find((s) => s.key === key)
+    return setting ? setting.value : defaultValue
   }
 
   const filteredUsers = users.filter(
@@ -291,7 +399,7 @@ export function AdminPanel({ currentUser, onClose }: AdminPanelProps) {
         <Tabs defaultValue="users" className="space-y-4">
           <TabsList>
             <TabsTrigger value="users">Users Management</TabsTrigger>
-            <TabsTrigger value="reports">Reports</TabsTrigger>
+            <TabsTrigger value="reports">Reports ({stats.pendingReports})</TabsTrigger>
             <TabsTrigger value="settings">System Settings</TabsTrigger>
           </TabsList>
 
@@ -354,14 +462,24 @@ export function AdminPanel({ currentUser, onClose }: AdminPanelProps) {
                           </div>
 
                           <div className="flex items-center space-x-2">
-                            <Button size="sm" variant="outline">
+                            <Button size="sm" variant="outline" title="View Details">
                               <Eye className="h-4 w-4" />
                             </Button>
-                            <Button size="sm" variant="outline" onClick={() => handleBanUser(user.id)}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleBanUser(user.id, user.username || user.email)}
+                              title="Ban User"
+                            >
                               <Ban className="h-4 w-4" />
                             </Button>
                             {adminRole === "super_admin" && (
-                              <Button size="sm" variant="destructive">
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => handleDeleteUser(user.id, user.username || user.email)}
+                                title="Delete User"
+                              >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                             )}
@@ -463,41 +581,87 @@ export function AdminPanel({ currentUser, onClose }: AdminPanelProps) {
           <TabsContent value="settings" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>System Settings</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <Settings className="h-5 w-5" />
+                  System Settings
+                </CardTitle>
                 <CardDescription>Configure application settings</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Application Name</Label>
-                      <Input defaultValue="Telegram Clone" />
-                    </div>
-                    <div>
-                      <Label>Max File Size (MB)</Label>
-                      <Input type="number" defaultValue="50" />
-                    </div>
-                  </div>
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                      <div>
+                        <Label>Application Name</Label>
+                        <Input
+                          value={getSetting("app_name", "Telegram Clone")}
+                          onChange={(e) => updateSetting("app_name", e.target.value)}
+                        />
+                      </div>
 
-                  <div>
-                    <Label>Registration Enabled</Label>
-                    <Select defaultValue="true">
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="true">Enabled</SelectItem>
-                        <SelectItem value="false">Disabled</SelectItem>
-                      </SelectContent>
-                    </Select>
+                      <div>
+                        <Label>Max File Size (MB)</Label>
+                        <Input
+                          type="number"
+                          value={Math.round(getSetting("max_file_size", 52428800) / 1024 / 1024)}
+                          onChange={(e) =>
+                            updateSetting("max_file_size", Number.parseInt(e.target.value) * 1024 * 1024)
+                          }
+                        />
+                      </div>
+
+                      <div>
+                        <Label>Max Group Members</Label>
+                        <Input
+                          type="number"
+                          value={getSetting("max_group_members", 200)}
+                          onChange={(e) => updateSetting("max_group_members", Number.parseInt(e.target.value))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <Label>Registration Enabled</Label>
+                        <Switch
+                          checked={getSetting("registration_enabled", true)}
+                          onCheckedChange={(checked) => updateSetting("registration_enabled", checked)}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <Label>Maintenance Mode</Label>
+                        <Switch
+                          checked={getSetting("maintenance_mode", false)}
+                          onCheckedChange={(checked) => updateSetting("maintenance_mode", checked)}
+                        />
+                      </div>
+
+                      <div>
+                        <Label>Message Retention (Days)</Label>
+                        <Input
+                          type="number"
+                          value={getSetting("message_retention_days", 365)}
+                          onChange={(e) => updateSetting("message_retention_days", Number.parseInt(e.target.value))}
+                        />
+                      </div>
+                    </div>
                   </div>
 
                   <div>
                     <Label>System Announcement</Label>
-                    <Textarea placeholder="Enter system-wide announcement..." />
+                    <Textarea
+                      placeholder="Enter system-wide announcement..."
+                      value={getSetting("system_announcement", "")}
+                      onChange={(e) => updateSetting("system_announcement", e.target.value)}
+                      rows={3}
+                    />
                   </div>
 
-                  <Button>Save Settings</Button>
+                  <Button onClick={handleSaveSettings} disabled={settingsLoading} className="w-full">
+                    <Save className="h-4 w-4 mr-2" />
+                    {settingsLoading ? "Saving..." : "Save Settings"}
+                  </Button>
                 </div>
               </CardContent>
             </Card>

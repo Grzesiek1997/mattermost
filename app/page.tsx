@@ -196,39 +196,41 @@ export default function Home() {
               </div>
             </div>
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <SettingsDialog currentUser={currentUser} onUserUpdate={handleUserUpdate} />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {isAdmin && (
-                  <>
-                    <DropdownMenuItem onClick={() => setShowAdmin(true)}>
-                      <Shield className="h-4 w-4 mr-2" />
-                      Admin Panel
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                  </>
-                )}
-                <DropdownMenuItem onClick={() => setShowTester(true)}>
-                  <TestTube className="h-4 w-4 mr-2" />
-                  Test Connection
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setDarkMode(!darkMode)}>
-                  {darkMode ? <Sun className="h-4 w-4 mr-2" /> : <Moon className="h-4 w-4 mr-2" />}
-                  {darkMode ? "Light Mode" : "Dark Mode"}
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <Bell className="h-4 w-4 mr-2" />
-                  Notifications
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleSignOut} className="text-red-600">
-                  <LogOut className="h-4 w-4 mr-2" />
-                  Sign Out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <div className="flex items-center space-x-2">
+              <Button
+                onClick={handleSignOut}
+                variant="outline"
+                size="sm"
+                className="text-red-600 hover:text-red-700 bg-transparent"
+              >
+                <LogOut className="h-4 w-4" />
+              </Button>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <SettingsDialog currentUser={currentUser} onUserUpdate={handleUserUpdate} />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {isAdmin && (
+                    <>
+                      <DropdownMenuItem onClick={() => setShowAdmin(true)}>
+                        <Shield className="h-4 w-4 mr-2" />
+                        Admin Panel
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </>
+                  )}
+                  <DropdownMenuItem onClick={() => setDarkMode(!darkMode)}>
+                    {darkMode ? <Sun className="h-4 w-4 mr-2" /> : <Moon className="h-4 w-4 mr-2" />}
+                    {darkMode ? "Light Mode" : "Dark Mode"}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem>
+                    <Bell className="h-4 w-4 mr-2" />
+                    Notifications
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </div>
 
@@ -258,18 +260,12 @@ export default function Home() {
               <p className="text-gray-500 mb-6">Select a chat to start messaging or create a new one</p>
               <div className="space-y-3">
                 <NewChatDialog onChatCreated={(chat) => setSelectedChat(chat)} />
-                <div className="flex gap-2 justify-center">
-                  <Button onClick={() => setShowTester(true)} variant="outline" size="sm">
-                    <TestTube className="h-4 w-4 mr-2" />
-                    Test System
+                {isAdmin && (
+                  <Button onClick={() => setShowAdmin(true)} variant="outline" size="sm">
+                    <Shield className="h-4 w-4 mr-2" />
+                    Admin Panel
                   </Button>
-                  {isAdmin && (
-                    <Button onClick={() => setShowAdmin(true)} variant="outline" size="sm">
-                      <Shield className="h-4 w-4 mr-2" />
-                      Admin Panel
-                    </Button>
-                  )}
-                </div>
+                )}
               </div>
             </div>
           </div>
