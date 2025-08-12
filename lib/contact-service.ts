@@ -481,22 +481,53 @@ export class ContactService {
         throw new Error("Not authenticated")
       }
 
-      // Use the safe database function to create or find direct chat
-      const { data: chatId, error: rpcError } = await supabase.rpc("create_direct_chat_with_members", {
-        contact_id: contactId,
-      })
+      try {
+        // Use the safe database function to create or find direct chat
+        const { data: chatId, error: rpcError } = await supabase.rpc("create_direct_chat_with_members", {
+          contact_id: contactId,
+        })
 
-      if (rpcError) {
-        console.error("[ContactService] RPC error:", rpcError)
-        throw rpcError
+        if (!rpcError && chatId) {
+          console.log(`[ContactService] ✅ Direct chat ready via RPC: ${chatId}`)
+          return { id: chatId }
+        } else {
+          console.warn("[ContactService] RPC failed, trying manual creation:", rpcError)
+        }
+      } catch (rpcErr) {
+        console.warn("[ContactService] RPC function not available, using manual creation")
       }
 
-      if (!chatId) {
-        throw new Error("Failed to create or find direct chat")
+      console.log("[ContactService] Creating chat manually...")
+
+      // Create new chat
+      const { data: newChat, error: chatError } = await supabase
+        .from("chats")
+        .insert({
+          name: null,
+          is_group: false,
+          created_by: user.id,
+        })
+        .select("id")
+        .single()
+
+      if (chatError) {
+        console.error("[ContactService] Chat creation error:", chatError)
+        throw chatError
       }
 
-      console.log(`[ContactService] ✅ Direct chat ready: ${chatId}`)
-      return { id: chatId }
+      // Add both users as members
+      const { error: membersError } = await supabase.from("chat_members").insert([
+        { chat_id: newChat.id, user_id: user.id },
+        { chat_id: newChat.id, user_id: contactId },
+      ])
+
+      if (membersError) {
+        console.error("[ContactService] Members addition error:", membersError)
+        throw membersError
+      }
+
+      console.log(`[ContactService] ✅ Direct chat created manually: ${newChat.id}`)
+      return { id: newChat.id }
     } catch (error: any) {
       console.error("[ContactService] Start direct chat error:", error)
       throw error
