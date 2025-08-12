@@ -481,72 +481,22 @@ export class ContactService {
         throw new Error("Not authenticated")
       }
 
-      // Search for existing direct chat between the two users
-      const { data: existingChats, error: searchError } = await supabase
-        .from("chats")
-        .select(`
-          id,
-          chat_members!inner(user_id)
-        `)
-        .eq("type", "direct")
-        .eq("chat_members.user_id", user.id)
+      // Use the safe database function to create or find direct chat
+      const { data: chatId, error: rpcError } = await supabase.rpc("create_direct_chat_with_members", {
+        contact_id: contactId,
+      })
 
-      if (searchError) {
-        console.error("[ContactService] Search existing chat error:", searchError)
-        throw searchError
+      if (rpcError) {
+        console.error("[ContactService] RPC error:", rpcError)
+        throw rpcError
       }
 
-      // Check if any of these chats also contains the contact
-      let existingChatId = null
-      if (existingChats && existingChats.length > 0) {
-        for (const chat of existingChats) {
-          const { data: contactInChat, error: checkError } = await supabase
-            .from("chat_members")
-            .select("id")
-            .eq("chat_id", chat.id)
-            .eq("user_id", contactId)
-            .single()
-
-          if (!checkError && contactInChat) {
-            existingChatId = chat.id
-            break
-          }
-        }
+      if (!chatId) {
+        throw new Error("Failed to create or find direct chat")
       }
 
-      if (existingChatId) {
-        console.log(`[ContactService] ✅ Found existing direct chat: ${existingChatId}`)
-        return { id: existingChatId }
-      }
-
-      // Create new direct chat
-      const { data: newChat, error: createError } = await supabase
-        .from("chats")
-        .insert({
-          type: "direct",
-          created_by: user.id,
-        })
-        .select()
-        .single()
-
-      if (createError) {
-        console.error("[ContactService] Create chat error:", createError)
-        throw createError
-      }
-
-      // Add both users as members
-      const { error: membersError } = await supabase.from("chat_members").insert([
-        { chat_id: newChat.id, user_id: user.id, role: "member" },
-        { chat_id: newChat.id, user_id: contactId, role: "member" },
-      ])
-
-      if (membersError) {
-        console.error("[ContactService] Add chat members error:", membersError)
-        throw membersError
-      }
-
-      console.log(`[ContactService] ✅ Created new direct chat: ${newChat.id}`)
-      return newChat
+      console.log(`[ContactService] ✅ Direct chat ready: ${chatId}`)
+      return { id: chatId }
     } catch (error: any) {
       console.error("[ContactService] Start direct chat error:", error)
       throw error

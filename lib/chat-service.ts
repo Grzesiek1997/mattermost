@@ -144,7 +144,7 @@ export class ChatService {
       .from("messages")
       .insert({
         chat_id: chatId,
-        user_id: user.id,
+        user_id: user.id, // Changed from sender_id to user_id
         content,
         message_type: messageType,
         reply_to_id: replyToId,
