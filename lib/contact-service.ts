@@ -65,17 +65,42 @@ export class ContactService {
 
       console.log(`[ContactService] Current user: ${currentUser.id}`)
 
-      // Try using the custom function first
+      // Try using the custom function first with correct parameter name
       try {
         const { data: functionData, error: functionError } = await supabase.rpc("get_searchable_users", {
-          search_query: query,
-          current_user_id: currentUser.id,
-          result_limit: limit,
+          search_term: query, // Fixed parameter name to match database function
         })
 
         if (!functionError && functionData) {
           console.log(`[ContactService] Function search found ${functionData.length} users`)
-          return functionData
+
+          // Get contact statuses for found users
+          const userIds = functionData.map((u: any) => u.id) || []
+          const contactStatuses: Record<string, string> = {}
+
+          if (userIds.length > 0) {
+            const { data: contactData, error: contactError } = await supabase
+              .from("contacts")
+              .select("contact_user_id, user_id, status")
+              .or(
+                `and(user_id.eq.${currentUser.id},contact_user_id.in.(${userIds.join(",")})),and(contact_user_id.eq.${currentUser.id},user_id.in.(${userIds.join(",")}))`,
+              )
+
+            if (!contactError && contactData) {
+              contactData.forEach((contact: any) => {
+                const otherUserId = contact.user_id === currentUser.id ? contact.contact_user_id : contact.user_id
+                contactStatuses[otherUserId] = contact.status
+              })
+            }
+          }
+
+          // Combine user data with contact statuses
+          const results = functionData.map((user: any) => ({
+            ...user,
+            contact_status: contactStatuses[user.id] || ("none" as const),
+          }))
+
+          return results
         } else {
           console.warn("[ContactService] Function search failed:", functionError)
         }
@@ -175,14 +200,14 @@ export class ContactService {
         }
       }
 
-      // Send invitation
+      // Send invitation with correct timestamp field
       const { data: newInvitation, error: insertError } = await supabase
         .from("contacts")
         .insert({
           user_id: user.id,
           contact_user_id: receiverId,
           status: "pending",
-          invited_at: new Date().toISOString(),
+          created_at: new Date().toISOString(), // Use created_at instead of invited_at
         })
         .select()
         .single()
@@ -325,13 +350,13 @@ export class ContactService {
         .from("contacts")
         .select(`
           *,
-          inviter:user_id (
+          inviter:users!contacts_user_id_fkey (
             id, username, full_name, avatar_url
           )
         `)
         .eq("contact_user_id", user.id)
         .eq("status", "pending")
-        .order("invited_at", { ascending: false })
+        .order("created_at", { ascending: false }) // Use created_at instead of invited_at
 
       if (error) {
         console.error("[ContactService] Get pending invitations error:", error)
@@ -340,6 +365,7 @@ export class ContactService {
 
       const invitations = (data || []).map((item: any) => ({
         ...item,
+        invited_at: item.created_at, // Map created_at to invited_at for compatibility
         inviter_username: item.inviter?.username,
         inviter_full_name: item.inviter?.full_name,
         inviter_avatar_url: item.inviter?.avatar_url,

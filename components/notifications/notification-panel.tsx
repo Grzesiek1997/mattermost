@@ -4,7 +4,8 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Bell, Check, X, UserPlus, MessageCircle } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { toast } from "@/hooks/use-toast"
@@ -34,34 +35,40 @@ export function NotificationPanel({ onNotificationHandled }: NotificationPanelPr
     loadNotifications()
 
     // Subscribe to real-time notifications
-    const channel = supabase
-      .channel("notifications")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "notifications",
-          filter: `user_id=eq.${getCurrentUserId()}`,
-        },
-        (payload) => {
-          console.log("[NotificationPanel] New notification:", payload)
-          setNotifications((prev) => [payload.new as Notification, ...prev])
-        },
-      )
-      .subscribe()
+    const setupSubscription = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
 
+      if (!user) return
+
+      const channel = supabase
+        .channel("notifications")
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "notifications",
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            console.log("[NotificationPanel] New notification:", payload)
+            setNotifications((prev) => [payload.new as Notification, ...prev])
+          },
+        )
+        .subscribe()
+
+      return () => {
+        supabase.removeChannel(channel)
+      }
+    }
+
+    const cleanup = setupSubscription()
     return () => {
-      supabase.removeChannel(channel)
+      cleanup.then((fn) => fn && fn())
     }
   }, [])
-
-  const getCurrentUserId = async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    return user?.id
-  }
 
   const loadNotifications = async () => {
     try {
@@ -186,20 +193,21 @@ export function NotificationPanel({ onNotificationHandled }: NotificationPanelPr
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center">
-          <Bell className="h-5 w-5 mr-2" />
-          Notifications
-          {unreadCount > 0 && (
-            <Badge variant="destructive" className="ml-2">
-              {unreadCount}
-            </Badge>
-          )}
-        </CardTitle>
-        <CardDescription>Your recent notifications and invitations</CardDescription>
-      </CardHeader>
-      <CardContent>
+    <Dialog open={true}>
+      <DialogContent className="sm:max-w-[600px] max-h-[80vh]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center">
+            <Bell className="h-5 w-5 mr-2" />
+            Notifications
+            {unreadCount > 0 && (
+              <Badge variant="destructive" className="ml-2">
+                {unreadCount}
+              </Badge>
+            )}
+          </DialogTitle>
+          <DialogDescription>Your recent notifications and invitations</DialogDescription>
+        </DialogHeader>
+
         {notifications.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             <Bell className="h-12 w-12 mx-auto mb-4 opacity-50" />
@@ -267,7 +275,7 @@ export function NotificationPanel({ onNotificationHandled }: NotificationPanelPr
             </div>
           </ScrollArea>
         )}
-      </CardContent>
-    </Card>
+      </DialogContent>
+    </Dialog>
   )
 }
