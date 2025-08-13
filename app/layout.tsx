@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   title: "Telegram Clone - Advanced Messaging App",
   description: "A feature-rich messaging application built with Next.js, Supabase, and modern web technologies",
   keywords: "messaging, chat, telegram, real-time, communication",
-    generator: 'v0.dev'
+    generator: 'v0.app'
 }
 
 export default function RootLayout({
