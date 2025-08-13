@@ -482,9 +482,9 @@ export class ContactService {
       }
 
       try {
-        // Use the safe database function to create or find direct chat
         const { data: chatId, error: rpcError } = await supabase.rpc("create_direct_chat_with_members", {
-          contact_id: contactId,
+          user1: user.id,
+          user2: contactId,
         })
 
         if (!rpcError && chatId) {
@@ -499,12 +499,11 @@ export class ContactService {
 
       console.log("[ContactService] Creating chat manually...")
 
-      // Create new chat
       const { data: newChat, error: chatError } = await supabase
         .from("chats")
         .insert({
           name: null,
-          is_group: false,
+          type: "direct",
           created_by: user.id,
         })
         .select("id")
@@ -515,10 +514,9 @@ export class ContactService {
         throw chatError
       }
 
-      // Add both users as members
-      const { error: membersError } = await supabase.from("chat_members").insert([
-        { chat_id: newChat.id, user_id: user.id },
-        { chat_id: newChat.id, user_id: contactId },
+      const { error: membersError } = await supabase.from("chat_participants").insert([
+        { chat_id: newChat.id, user_id: user.id, role: "member" },
+        { chat_id: newChat.id, user_id: contactId, role: "member" },
       ])
 
       if (membersError) {
