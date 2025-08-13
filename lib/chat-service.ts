@@ -48,7 +48,7 @@ export class ChatService {
 
     try {
       const { data, error } = await supabase
-        .from("chat_members")
+        .from("chat_participants")
         .select(`
           *,
           chats:chat_id (
