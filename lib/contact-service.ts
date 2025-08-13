@@ -499,6 +499,30 @@ export class ContactService {
 
       console.log("[ContactService] Creating chat manually...")
 
+      // First check if direct chat already exists
+      const { data: existingChats, error: searchError } = await supabase
+        .from("chats")
+        .select(`
+          id,
+          chat_participants!inner(user_id)
+        `)
+        .eq("type", "direct")
+
+      if (searchError) {
+        console.error("[ContactService] Search existing chats error:", searchError)
+        throw searchError
+      }
+
+      // Check if any existing chat has both users
+      for (const chat of existingChats || []) {
+        const participantIds = chat.chat_participants.map((p: any) => p.user_id)
+        if (participantIds.includes(user.id) && participantIds.includes(contactId) && participantIds.length === 2) {
+          console.log(`[ContactService] ✅ Found existing direct chat: ${chat.id}`)
+          return { id: chat.id }
+        }
+      }
+
+      // Create new chat
       const { data: newChat, error: chatError } = await supabase
         .from("chats")
         .insert({
