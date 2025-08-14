@@ -1,4 +1,4 @@
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { createClient } from "@supabase/supabase-js"
 
 // Check if Supabase environment variables are available
 export const isSupabaseConfigured =
@@ -21,7 +21,17 @@ if (!isSupabaseConfigured) {
   console.warn("[Supabase] Missing environment variables. Please configure Supabase integration in Project Settings.")
 }
 
-export const supabase = createClientComponentClient()
+export const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
+  {
+    auth: {
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true,
+    },
+  },
+)
 
 // Added back SUPABASE_READY export for compatibility
 export const SUPABASE_READY = isSupabaseConfigured
@@ -35,10 +45,7 @@ async function testConnection() {
   try {
     console.log("[Supabase] Testing connection...")
 
-    // Test basic connection with a simple query
-    const { data: healthCheck, error: healthError } = await supabase
-      .from("users")
-      .select("count", { count: "exact", head: true })
+    const { data: healthCheck, error: healthError } = await supabase.from("users").select("id").limit(1)
 
     if (healthError) {
       console.error("[Supabase] Health check failed:", healthError.message)
@@ -63,7 +70,7 @@ async function testConnection() {
 }
 
 // Run connection test only if configured
-if (isSupabaseConfigured) {
+if (isSupabaseConfigured && typeof window !== "undefined") {
   testConnection()
 }
 

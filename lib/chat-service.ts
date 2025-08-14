@@ -39,7 +39,6 @@ export class ChatService {
     return data
   }
 
-  // Get user's chats
   static async getUserChats(userId: string) {
     if (!SUPABASE_READY) {
       console.log("[ChatService] Demo mode - returning empty chat list")
@@ -47,22 +46,45 @@ export class ChatService {
     }
 
     try {
-      const { data, error } = await supabase
+      // First get chat IDs where user is a participant
+      const { data: participantData, error: participantError } = await supabase
         .from("chat_participants")
-        .select(`
-          *,
-          chats:chat_id (
-            *,
-            created_by_user:created_by (
-              id, username, full_name, avatar_url
-            )
-          )
-        `)
+        .select("chat_id, joined_at")
         .eq("user_id", userId)
         .order("joined_at", { ascending: false })
 
-      if (error) throw error
-      return data || []
+      if (participantError) throw participantError
+
+      if (!participantData || participantData.length === 0) {
+        return []
+      }
+
+      // Then get chat details for those chat IDs
+      const chatIds = participantData.map((p) => p.chat_id)
+      const { data: chatsData, error: chatsError } = await supabase
+        .from("chats")
+        .select(`
+          *,
+          created_by_user:created_by (
+            id, username, full_name, avatar_url
+          )
+        `)
+        .in("id", chatIds)
+
+      if (chatsError) throw chatsError
+
+      // Combine the data
+      const result = participantData
+        .map((participant) => {
+          const chat = chatsData?.find((c) => c.id === participant.chat_id)
+          return {
+            ...participant,
+            chats: chat,
+          }
+        })
+        .filter((item) => item.chats) // Filter out any chats that weren't found
+
+      return result
     } catch (error) {
       console.error("Get user chats error:", error)
       return []
