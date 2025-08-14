@@ -27,10 +27,24 @@ export class ContactService {
     try {
       console.log("[ContactService] Testing database connection...")
 
+      // First test basic connection
       const { data, error } = await supabase.from("users").select("id, username, full_name").limit(1)
 
       if (error) {
         console.error("[ContactService] Connection test failed:", error)
+
+        // Try a simpler query to diagnose the issue
+        try {
+          const { data: simpleData, error: simpleError } = await supabase.from("users").select("count").limit(1)
+          if (simpleError) {
+            console.error("[ContactService] Simple query also failed:", simpleError)
+          } else {
+            console.log("[ContactService] Simple query succeeded, RLS policy issue detected")
+          }
+        } catch (simpleErr) {
+          console.error("[ContactService] Simple query error:", simpleErr)
+        }
+
         return false
       }
 
@@ -38,6 +52,14 @@ export class ContactService {
       return true
     } catch (err: any) {
       console.error("[ContactService] Connection test error:", err)
+
+      // Additional diagnostic information
+      if (err.message?.includes("permission denied")) {
+        console.error("[ContactService] Permission denied - RLS policies may be too restrictive")
+      } else if (err.message?.includes("relation") && err.message?.includes("does not exist")) {
+        console.error("[ContactService] Table does not exist - database setup required")
+      }
+
       return false
     }
   }
