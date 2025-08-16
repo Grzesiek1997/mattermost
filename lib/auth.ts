@@ -226,13 +226,11 @@ export class AuthService {
       console.log("[AuthService] Creating user profile with direct insert...")
       const profileData = {
         id: authData.user.id,
-        email: normalizedEmail,
         username: userData.username || normalizedEmail.split("@")[0],
         full_name: userData.full_name || "User",
         bio: userData.bio || null,
         avatar_url: userData.avatar_url || null,
-        phone: userData.phone || null,
-        is_online: true,
+        status: "online",
         last_seen: new Date().toISOString(),
       }
 
@@ -386,10 +384,9 @@ export class AuthService {
             .from("profiles")
             .insert({
               id: data.user.id,
-              email: normalizedEmail,
               username: data.user.user_metadata?.username || normalizedEmail.split("@")[0],
               full_name: data.user.user_metadata?.full_name || "User",
-              is_online: true,
+              status: "online",
               last_seen: new Date().toISOString(),
             })
             .select()
@@ -413,7 +410,7 @@ export class AuthService {
         await supabase
           .from("profiles")
           .update({
-            is_online: true,
+            status: "online",
             last_seen: new Date().toISOString(),
           })
           .eq("id", data.user.id)
@@ -450,7 +447,7 @@ export class AuthService {
           await supabase
             .from("profiles")
             .update({
-              is_online: false,
+              status: "offline",
               last_seen: new Date().toISOString(),
             })
             .eq("id", user.id)
@@ -536,10 +533,9 @@ export class AuthService {
           .from("profiles")
           .insert({
             id: authUser.id,
-            email: authUser.email || "",
             username: authUser.user_metadata?.username || authUser.email?.split("@")[0] || "user",
             full_name: authUser.user_metadata?.full_name || "User",
-            is_online: true,
+            status: "online",
             last_seen: new Date().toISOString(),
           })
           .select()
