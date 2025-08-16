@@ -45,7 +45,7 @@ async function testConnection() {
   try {
     console.log("[Supabase] Testing connection...")
 
-    const { data: healthCheck, error: healthError } = await supabase.from("users").select("id").limit(1)
+    const { data: healthCheck, error: healthError } = await supabase.from("profiles").select("id").limit(1)
 
     if (healthError) {
       console.error("[Supabase] Health check failed:", healthError.message)

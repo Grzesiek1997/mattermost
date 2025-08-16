@@ -13,7 +13,7 @@ export class AuthService {
 
       // Check Supabase connection (this doesn't require auth)
       const { data: connectionTest, error: connectionError } = await supabase
-        .from("users")
+        .from("profiles")
         .select("count", { count: "exact", head: true })
 
       console.log("[AuthService] Connection test:", {
@@ -238,7 +238,11 @@ export class AuthService {
 
       console.log("[AuthService] Profile data to insert:", profileData)
 
-      const { data: profile, error: profileError } = await supabase.from("users").insert(profileData).select().single()
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .insert(profileData)
+        .select()
+        .single()
 
       if (profileError) {
         console.error("[AuthService] Profile creation error:", profileError)
@@ -321,9 +325,9 @@ export class AuthService {
             )
           }
         } else if (error.message.includes("Invalid login credentials")) {
-          // Check if user exists in our users table (this doesn't require auth)
+          // Check if user exists in our profiles table (this doesn't require auth)
           const { data: existingUser } = await supabase
-            .from("users")
+            .from("profiles")
             .select("email")
             .eq("email", normalizedEmail)
             .single()
@@ -353,7 +357,7 @@ export class AuthService {
       // Get or create user profile
       console.log("[AuthService] Getting user profile...")
       let { data: profile, error: profileError } = await supabase
-        .from("users")
+        .from("profiles")
         .select("*")
         .eq("id", data.user.id)
         .single()
@@ -379,7 +383,7 @@ export class AuthService {
         } catch (funcError) {
           // Fallback to direct insert
           const { data: newProfile, error: createError } = await supabase
-            .from("users")
+            .from("profiles")
             .insert({
               id: data.user.id,
               email: normalizedEmail,
@@ -407,7 +411,7 @@ export class AuthService {
       console.log("[AuthService] Updating online status...")
       try {
         await supabase
-          .from("users")
+          .from("profiles")
           .update({
             is_online: true,
             last_seen: new Date().toISOString(),
@@ -444,7 +448,7 @@ export class AuthService {
         console.log("[AuthService] Updating offline status for:", user.email)
         try {
           await supabase
-            .from("users")
+            .from("profiles")
             .update({
               is_online: false,
               last_seen: new Date().toISOString(),
@@ -495,7 +499,7 @@ export class AuthService {
 
       // Get user profile
       const { data: profile, error: profileError } = await supabase
-        .from("users")
+        .from("profiles")
         .select("*")
         .eq("id", authUser.id)
         .single()
@@ -521,7 +525,7 @@ export class AuthService {
 
     try {
       const { data, error } = await supabase
-        .from("users")
+        .from("profiles")
         .update({
           ...updates,
           updated_at: new Date().toISOString(),
