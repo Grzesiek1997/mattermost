@@ -502,12 +502,56 @@ export class AuthService {
         .from("profiles")
         .select("*")
         .eq("id", authUser.id)
-        .single()
+        .maybeSingle()
 
       if (profileError) {
         console.error("[AuthService] Profile fetch error:", profileError)
-        // If profile doesn't exist, return null instead of throwing
         return null
+      }
+
+      if (!profile) {
+        console.log("[AuthService] No profile found, creating one...")
+
+        try {
+          // Try using the secure function first
+          const { data: profileFromFunction, error: functionError } = await supabase.rpc("create_user_profile", {
+            user_id: authUser.id,
+            user_email: authUser.email || "",
+            user_username: authUser.user_metadata?.username || authUser.email?.split("@")[0] || "user",
+            user_full_name: authUser.user_metadata?.full_name || "User",
+          })
+
+          if (!functionError && profileFromFunction) {
+            console.log("[AuthService] Profile created via function")
+            return profileFromFunction
+          } else {
+            console.warn("[AuthService] Function failed, trying direct insert:", functionError)
+          }
+        } catch (funcError) {
+          console.warn("[AuthService] Function not available, trying direct insert:", funcError)
+        }
+
+        // Fallback to direct insert
+        const { data: newProfile, error: createError } = await supabase
+          .from("profiles")
+          .insert({
+            id: authUser.id,
+            email: authUser.email || "",
+            username: authUser.user_metadata?.username || authUser.email?.split("@")[0] || "user",
+            full_name: authUser.user_metadata?.full_name || "User",
+            is_online: true,
+            last_seen: new Date().toISOString(),
+          })
+          .select()
+          .single()
+
+        if (createError) {
+          console.error("[AuthService] Failed to create profile:", createError)
+          return null
+        }
+
+        console.log("[AuthService] Profile created successfully")
+        return newProfile
       }
 
       console.log("[AuthService] === GET CURRENT USER SUCCESS ===")
