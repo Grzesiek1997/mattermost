@@ -25,7 +25,7 @@ export class ChatService {
     if (!user) throw new Error("Not authenticated")
 
     const { data, error } = await supabase
-      .from("chats")
+      .from("conversations")
       .insert({
         type,
         title,
@@ -46,48 +46,53 @@ export class ChatService {
     }
 
     try {
-      // First get chat IDs where user is a participant
-      const { data: participantData, error: participantError } = await supabase
-        .from("chat_participants")
-        .select("chat_id, joined_at")
-        .eq("user_id", userId)
-        .order("joined_at", { ascending: false })
+      const { data, error } = await supabase.rpc("get_user_conversations", {
+        p_user_id: userId,
+      })
 
-      if (participantError) throw participantError
-
-      if (!participantData || participantData.length === 0) {
-        return []
-      }
-
-      // Then get chat details for those chat IDs
-      const chatIds = participantData.map((p) => p.chat_id)
-      const { data: chatsData, error: chatsError } = await supabase
-        .from("chats")
-        .select(`
-          *,
-          created_by_user:created_by (
-            id, username, full_name, avatar_url
-          )
-        `)
-        .in("id", chatIds)
-
-      if (chatsError) throw chatsError
-
-      // Combine the data
-      const result = participantData
-        .map((participant) => {
-          const chat = chatsData?.find((c) => c.id === participant.chat_id)
-          return {
-            ...participant,
-            chats: chat,
-          }
-        })
-        .filter((item) => item.chats) // Filter out any chats that weren't found
-
-      return result
+      if (error) throw error
+      return data || []
     } catch (error) {
       console.error("Get user chats error:", error)
-      return []
+      try {
+        const { data: participantData, error: participantError } = await supabase
+          .from("conversation_participants")
+          .select("conversation_id, joined_at")
+          .eq("user_id", userId)
+          .order("joined_at", { ascending: false })
+
+        if (participantError) throw participantError
+
+        if (!participantData || participantData.length === 0) {
+          return []
+        }
+
+        const conversationIds = participantData.map((p) => p.conversation_id)
+        const { data: conversationsData, error: conversationsError } = await supabase
+          .from("conversations")
+          .select(`
+            *,
+            created_by_user:created_by (
+              id, username, full_name, avatar_url
+            )
+          `)
+          .in("id", conversationIds)
+
+        if (conversationsError) throw conversationsError
+
+        return participantData
+          .map((participant) => {
+            const conversation = conversationsData?.find((c) => c.id === participant.conversation_id)
+            return {
+              ...participant,
+              conversations: conversation,
+            }
+          })
+          .filter((item) => item.conversations)
+      } catch (fallbackError) {
+        console.error("Fallback query also failed:", fallbackError)
+        return []
+      }
     }
   }
 
@@ -114,7 +119,7 @@ export class ChatService {
             user:user_id (username, full_name)
           )
         `)
-        .eq("chat_id", chatId)
+        .eq("conversation_id", chatId)
         .eq("is_deleted", false)
         .order("created_at", { ascending: false })
         .range(offset, offset + limit - 1)
@@ -165,8 +170,8 @@ export class ChatService {
     const { data, error } = await supabase
       .from("messages")
       .insert({
-        chat_id: chatId,
-        user_id: user.id, // Changed from sender_id to user_id
+        conversation_id: chatId,
+        user_id: user.id,
         content,
         message_type: messageType,
         reply_to_id: replyToId,
@@ -252,7 +257,7 @@ export class ChatService {
       if (!user) return
 
       const { error } = await supabase.from("typing_indicators").upsert({
-        chat_id: chatId,
+        conversation_id: chatId,
         user_id: user.id,
         is_typing: isTyping,
         updated_at: new Date().toISOString(),
@@ -279,7 +284,7 @@ export class ChatService {
             id, username, full_name
           )
         `)
-        .eq("chat_id", chatId)
+        .eq("conversation_id", chatId)
         .eq("is_typing", true)
         .gte("updated_at", new Date(Date.now() - 10000).toISOString()) // Last 10 seconds
 
@@ -336,7 +341,7 @@ export class ChatService {
           user:user_id (
             id, username, full_name, avatar_url
           ),
-          chats:chat_id (
+          conversations:conversation_id (
             id, title, type
           )
         `)
