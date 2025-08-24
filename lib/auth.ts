@@ -439,11 +439,11 @@ export class AuthService {
           user_id: authUser.id,
         })
 
-        if (!rpcError && profile) {
+        if (!rpcError && profile && profile.length > 0) {
           console.log("[AuthService] Profile fetched via RPC function")
-          return profile
+          return profile[0] // RPC returns array, take first item
         } else {
-          console.warn("[AuthService] RPC function failed, trying direct query:", rpcError)
+          console.warn("[AuthService] RPC function failed or returned empty:", rpcError)
         }
       } catch (rpcError) {
         console.warn("[AuthService] RPC function not available:", rpcError)
@@ -459,7 +459,7 @@ export class AuthService {
         console.error("[AuthService] Profile fetch error:", profileError)
 
         if (profileError.message.includes("permission denied")) {
-          console.log("[AuthService] RLS blocking access, creating profile from auth metadata...")
+          console.log("[AuthService] RLS blocking access, creating profile via RPC...")
 
           try {
             const { data: newProfile, error: createError } = await supabase.rpc("create_user_profile", {
@@ -469,9 +469,9 @@ export class AuthService {
               user_full_name: authUser.user_metadata?.full_name || "User",
             })
 
-            if (!createError && newProfile) {
+            if (!createError && newProfile && newProfile.length > 0) {
               console.log("[AuthService] Profile created via RPC function")
-              return newProfile
+              return newProfile[0] // RPC returns array, take first item
             }
           } catch (createRpcError) {
             console.warn("[AuthService] Profile creation RPC failed:", createRpcError)
@@ -482,7 +482,7 @@ export class AuthService {
       }
 
       if (!profile) {
-        console.log("[AuthService] No profile found, attempting to create one...")
+        console.log("[AuthService] No profile found, attempting to create one via RPC...")
 
         try {
           const { data: newProfile, error: createError } = await supabase.rpc("create_user_profile", {
@@ -492,9 +492,9 @@ export class AuthService {
             user_full_name: authUser.user_metadata?.full_name || "User",
           })
 
-          if (!createError && newProfile) {
+          if (!createError && newProfile && newProfile.length > 0) {
             console.log("[AuthService] Profile created via RPC function")
-            return newProfile
+            return newProfile[0] // RPC returns array, take first item
           } else {
             console.warn("[AuthService] RPC profile creation failed:", createError)
           }

@@ -1,19 +1,19 @@
 import { createClient } from "@supabase/supabase-js"
 
-// Check if Supabase environment variables are available
 export const isSupabaseConfigured =
-  typeof process.env.NEXT_PUBLIC_SUPABASE_URL === "string" &&
-  process.env.NEXT_PUBLIC_SUPABASE_URL.length > 0 &&
-  typeof process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY === "string" &&
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY.length > 0
+  (typeof process.env.NEXT_PUBLIC_SUPABASE_URL === "string" && process.env.NEXT_PUBLIC_SUPABASE_URL.length > 0) ||
+  (typeof process.env.SUPABASE_URL === "string" && process.env.SUPABASE_URL.length > 0)
+
+export const SUPABASE_READY = isSupabaseConfigured
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || ""
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || ""
 
 // Debug logging
 console.log("[Supabase] Environment check:", {
-  hasUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
-  hasKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-  urlPreview: process.env.NEXT_PUBLIC_SUPABASE_URL
-    ? process.env.NEXT_PUBLIC_SUPABASE_URL.substring(0, 30) + "..."
-    : "missing",
+  hasUrl: !!supabaseUrl,
+  hasKey: !!supabaseAnonKey,
+  urlPreview: supabaseUrl ? supabaseUrl.substring(0, 30) + "..." : "missing",
   configured: isSupabaseConfigured,
 })
 
@@ -21,20 +21,13 @@ if (!isSupabaseConfigured) {
   console.warn("[Supabase] Missing environment variables. Please configure Supabase integration in Project Settings.")
 }
 
-export const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
-  {
-    auth: {
-      autoRefreshToken: true,
-      persistSession: true,
-      detectSessionInUrl: true,
-    },
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true,
   },
-)
-
-// Added back SUPABASE_READY export for compatibility
-export const SUPABASE_READY = isSupabaseConfigured
+})
 
 async function testConnection() {
   if (!isSupabaseConfigured) {
@@ -45,6 +38,7 @@ async function testConnection() {
   try {
     console.log("[Supabase] Testing connection...")
 
+    // Simple auth session check instead of table access
     const { data: authData, error: authError } = await supabase.auth.getSession()
 
     if (authError) {
