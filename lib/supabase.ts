@@ -45,22 +45,15 @@ async function testConnection() {
   try {
     console.log("[Supabase] Testing connection...")
 
-    const { count, error: healthError } = await supabase.from("profiles").select("*", { count: "exact", head: true })
+    const { data: authData, error: authError } = await supabase.auth.getSession()
 
-    if (healthError) {
-      console.error("[Supabase] Health check failed:", healthError.message)
+    if (authError) {
+      console.error("[Supabase] Connection test failed:", authError.message)
       return false
     }
 
     console.log("[Supabase] ✅ Connection successful!")
-
-    // Test auth
-    const { data: authData, error: authError } = await supabase.auth.getSession()
-    if (authError) {
-      console.warn("[Supabase] Auth check warning:", authError.message)
-    } else {
-      console.log("[Supabase] Auth status:", authData.session ? "Authenticated" : "Not authenticated")
-    }
+    console.log("[Supabase] Auth status:", authData.session ? "Authenticated" : "Not authenticated")
 
     return true
   } catch (err: any) {

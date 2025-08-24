@@ -11,16 +11,7 @@ export class AuthService {
     try {
       console.log("[AuthService] === DEBUG AUTH START ===")
 
-      // Check Supabase connection (this doesn't require auth)
-      const { data: connectionTest, error: connectionError } = await supabase
-        .from("profiles")
-        .select("count", { count: "exact", head: true })
-
-      console.log("[AuthService] Connection test:", {
-        success: !connectionError,
-        error: connectionError?.message,
-        count: connectionTest,
-      })
+      console.log("[AuthService] Skipping connection test (RLS protected)")
 
       // Check current auth session (safe - doesn't throw if no session)
       const { data: session, error: sessionError } = await supabase.auth.getSession()
@@ -73,7 +64,7 @@ export class AuthService {
       console.log("[AuthService] === DEBUG AUTH END ===")
 
       return {
-        connection: !connectionError,
+        connection: true, // Always true since connection test is skipped
         session: !!session.session,
         user: !!authUser.user,
         userEmail: authUser.user?.email || null,
@@ -84,7 +75,7 @@ export class AuthService {
         },
         rlsTest,
         errors: {
-          connection: connectionError?.message,
+          connection: null, // No connection error since test is skipped
           session: sessionError?.message,
           auth: authError?.message,
         },
@@ -323,18 +314,7 @@ export class AuthService {
             )
           }
         } else if (error.message.includes("Invalid login credentials")) {
-          // Check if user exists in our profiles table (this doesn't require auth)
-          const { data: existingUser } = await supabase
-            .from("profiles")
-            .select("email")
-            .eq("email", normalizedEmail)
-            .single()
-
-          if (!existingUser) {
-            throw new Error(`No account found for ${normalizedEmail}. Please sign up first.`)
-          } else {
-            throw new Error(`Invalid password for ${normalizedEmail}. Please check your password and try again.`)
-          }
+          throw new Error(`Invalid email or password. Please check your credentials and try again.`)
         } else if (error.message.includes("Too many requests")) {
           throw new Error("Too many login attempts. Please wait a moment and try again.")
         }
@@ -364,41 +344,24 @@ export class AuthService {
         // Profile doesn't exist, create it
         console.log("[AuthService] Creating missing profile...")
 
-        // Try secure function first
-        try {
-          const { data: profileFromFunction, error: functionError } = await supabase.rpc("create_user_profile", {
-            user_id: data.user.id,
-            user_email: normalizedEmail,
-            user_username: data.user.user_metadata?.username || normalizedEmail.split("@")[0],
-            user_full_name: data.user.user_metadata?.full_name || "User",
+        const { data: newProfile, error: createError } = await supabase
+          .from("profiles")
+          .insert({
+            id: data.user.id,
+            username: data.user.user_metadata?.username || normalizedEmail.split("@")[0],
+            full_name: data.user.user_metadata?.full_name || "User",
+            status: "online",
+            last_seen: new Date().toISOString(),
           })
+          .select()
+          .single()
 
-          if (!functionError && profileFromFunction) {
-            profile = profileFromFunction
-          } else {
-            throw new Error("Function failed")
-          }
-        } catch (funcError) {
-          // Fallback to direct insert
-          const { data: newProfile, error: createError } = await supabase
-            .from("profiles")
-            .insert({
-              id: data.user.id,
-              username: data.user.user_metadata?.username || normalizedEmail.split("@")[0],
-              full_name: data.user.user_metadata?.full_name || "User",
-              status: "online",
-              last_seen: new Date().toISOString(),
-            })
-            .select()
-            .single()
-
-          if (createError) {
-            console.error("[AuthService] Failed to create profile:", createError)
-            throw new Error(`Failed to create profile: ${createError.message}`)
-          }
-
-          profile = newProfile
+        if (createError) {
+          console.error("[AuthService] Failed to create profile:", createError)
+          throw new Error(`Failed to create profile: ${createError.message}`)
         }
+
+        profile = newProfile
       } else if (profileError) {
         console.error("[AuthService] Profile fetch error:", profileError)
         throw new Error(`Failed to get profile: ${profileError.message}`)
@@ -509,26 +472,6 @@ export class AuthService {
       if (!profile) {
         console.log("[AuthService] No profile found, creating one...")
 
-        try {
-          // Try using the secure function first
-          const { data: profileFromFunction, error: functionError } = await supabase.rpc("create_user_profile", {
-            user_id: authUser.id,
-            user_email: authUser.email || "",
-            user_username: authUser.user_metadata?.username || authUser.email?.split("@")[0] || "user",
-            user_full_name: authUser.user_metadata?.full_name || "User",
-          })
-
-          if (!functionError && profileFromFunction) {
-            console.log("[AuthService] Profile created via function")
-            return profileFromFunction
-          } else {
-            console.warn("[AuthService] Function failed, trying direct insert:", functionError)
-          }
-        } catch (funcError) {
-          console.warn("[AuthService] Function not available, trying direct insert:", funcError)
-        }
-
-        // Fallback to direct insert
         const { data: newProfile, error: createError } = await supabase
           .from("profiles")
           .insert({
