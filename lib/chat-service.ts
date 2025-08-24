@@ -71,10 +71,14 @@ export class ChatService {
         const { data: conversationsData, error: conversationsError } = await supabase
           .from("conversations")
           .select(`
-            *,
-            created_by_user:created_by (
-              id, username, full_name, avatar_url
-            )
+            id,
+            name,
+            description,
+            is_group,
+            is_direct,
+            created_by,
+            created_at,
+            updated_at
           `)
           .in("id", conversationIds)
 
@@ -108,11 +112,11 @@ export class ChatService {
         .from("messages")
         .select(`
           *,
-          user:user_id (
-            id, username, full_name, avatar_url, is_online
+          user:sender_id (
+            id, username, full_name, avatar_url, status
           ),
           reply_to:reply_to_id (
-            id, content, user:user_id (username, full_name)
+            id, content, user:sender_id (username, full_name)
           ),
           reactions:message_reactions (
             id, emoji, user_id,
@@ -171,7 +175,7 @@ export class ChatService {
       .from("messages")
       .insert({
         conversation_id: chatId,
-        user_id: user.id,
+        sender_id: user.id,
         content,
         message_type: messageType,
         reply_to_id: replyToId,
@@ -181,11 +185,11 @@ export class ChatService {
       })
       .select(`
         *,
-        user:user_id (
-          id, username, full_name, avatar_url, is_online
+        user:sender_id (
+          id, username, full_name, avatar_url, status
         ),
         reply_to:reply_to_id (
-          id, content, user:user_id (username, full_name)
+          id, content, user:sender_id (username, full_name)
         )
       `)
       .single()
@@ -224,15 +228,13 @@ export class ChatService {
   // Remove reaction from message
   static async removeReaction(messageId: string, emoji: string) {
     if (!SUPABASE_READY) {
-      console.log("[ChatService] Demo mode - reaction removed (mock)")
-      await new Promise((resolve) => setTimeout(resolve, 200))
-      return { success: true }
+      return
     }
 
     const {
       data: { user },
     } = await supabase.auth.getUser()
-    if (!user) throw new Error("Not authenticated")
+    if (!user) return
 
     const { error } = await supabase
       .from("message_reactions")
@@ -338,11 +340,11 @@ export class ChatService {
         .from("messages")
         .select(`
           *,
-          user:user_id (
+          user:sender_id (
             id, username, full_name, avatar_url
           ),
           conversations:conversation_id (
-            id, title, type
+            id, name, is_group
           )
         `)
         .ilike("content", `%${query}%`)

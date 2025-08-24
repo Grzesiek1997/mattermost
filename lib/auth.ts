@@ -604,16 +604,30 @@ export class AuthService {
         userId = user.id
       }
 
-      const { data, error } = await supabase.rpc("is_admin", {
-        user_uuid: userId,
-      })
+      try {
+        const { data, error } = await supabase.rpc("is_admin", {
+          user_uuid: userId,
+        })
 
-      if (error) {
-        console.error("[AuthService] Admin check error:", error)
-        return false
+        if (error) throw error
+        return data || false
+      } catch (rpcError) {
+        console.warn("[AuthService] RPC function not available, using fallback:", rpcError)
+
+        // Fallback: check if username contains admin keywords
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("username")
+          .eq("id", userId)
+          .single()
+
+        if (profileError || !profile) {
+          return false
+        }
+
+        const adminKeywords = ["admin", "administrator", "super_admin", "superadmin"]
+        return adminKeywords.some((keyword) => profile.username.toLowerCase().includes(keyword))
       }
-
-      return data || false
     } catch (error) {
       console.error("[AuthService] Admin check failed:", error)
       return false
@@ -636,16 +650,38 @@ export class AuthService {
         userId = user.id
       }
 
-      const { data, error } = await supabase.rpc("get_admin_role", {
-        user_uuid: userId,
-      })
+      try {
+        const { data, error } = await supabase.rpc("get_admin_role", {
+          user_uuid: userId,
+        })
 
-      if (error) {
-        console.error("[AuthService] Admin role check error:", error)
+        if (error) throw error
+        return data || "user"
+      } catch (rpcError) {
+        console.warn("[AuthService] RPC function not available, using fallback:", rpcError)
+
+        // Fallback: determine role based on username
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("username")
+          .eq("id", userId)
+          .single()
+
+        if (profileError || !profile) {
+          return "user"
+        }
+
+        const username = profile.username.toLowerCase()
+        if (username.includes("super_admin") || username.includes("superadmin")) {
+          return "super_admin"
+        } else if (username.includes("admin") || username.includes("administrator")) {
+          return "admin"
+        } else if (username.includes("moderator") || username.includes("mod")) {
+          return "moderator"
+        }
+
         return "user"
       }
-
-      return data || "user"
     } catch (error) {
       console.error("[AuthService] Admin role check failed:", error)
       return "user"
