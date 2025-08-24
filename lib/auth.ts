@@ -298,8 +298,6 @@ export class AuthService {
 
         // Handle specific signin errors
         if (error.message.includes("Email not confirmed")) {
-          // Try to resend confirmation email
-          console.log("[AuthService] Attempting to resend confirmation email...")
           try {
             await supabase.auth.resend({
               type: "signup",
@@ -332,53 +330,33 @@ export class AuthService {
         confirmed: data.user.email_confirmed_at,
       })
 
-      // Get or create user profile
       console.log("[AuthService] Getting user profile...")
-      let { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", data.user.id)
-        .single()
+      const profile = await this.getCurrentUser()
 
-      if (profileError && profileError.code === "PGRST116") {
-        // Profile doesn't exist, create it
-        console.log("[AuthService] Creating missing profile...")
-
-        const { data: newProfile, error: createError } = await supabase
-          .from("profiles")
-          .insert({
-            id: data.user.id,
-            username: data.user.user_metadata?.username || normalizedEmail.split("@")[0],
-            full_name: data.user.user_metadata?.full_name || "User",
-            status: "online",
-            last_seen: new Date().toISOString(),
-          })
-          .select()
-          .single()
-
-        if (createError) {
-          console.error("[AuthService] Failed to create profile:", createError)
-          throw new Error(`Failed to create profile: ${createError.message}`)
-        }
-
-        profile = newProfile
-      } else if (profileError) {
-        console.error("[AuthService] Profile fetch error:", profileError)
-        throw new Error(`Failed to get profile: ${profileError.message}`)
+      if (!profile) {
+        console.error("[AuthService] Failed to get or create profile after signin")
+        throw new Error("Failed to get user profile after signin")
       }
 
-      // Update online status
       console.log("[AuthService] Updating online status...")
       try {
-        await supabase
-          .from("profiles")
-          .update({
-            status: "online",
-            last_seen: new Date().toISOString(),
-          })
-          .eq("id", data.user.id)
-      } catch (updateError) {
-        console.warn("[AuthService] Online status update failed:", updateError)
+        await supabase.rpc("update_user_status", {
+          user_id: data.user.id,
+          new_status: "online",
+        })
+      } catch (statusError) {
+        console.warn("[AuthService] Status update RPC failed, trying direct update:", statusError)
+        try {
+          await supabase
+            .from("profiles")
+            .update({
+              status: "online",
+              last_seen: new Date().toISOString(),
+            })
+            .eq("id", data.user.id)
+        } catch (updateError) {
+          console.warn("[AuthService] Direct status update also failed:", updateError)
+        }
       }
 
       console.log("[AuthService] === SIGNIN SUCCESS ===")
@@ -446,7 +424,6 @@ export class AuthService {
 
       if (authError) {
         console.error("[AuthService] Auth error:", authError)
-        // Don't throw here - just return null for unauthenticated state
         return null
       }
 
@@ -457,7 +434,21 @@ export class AuthService {
 
       console.log("[AuthService] Auth user found:", authUser.email)
 
-      // Get user profile
+      try {
+        const { data: profile, error: rpcError } = await supabase.rpc("get_user_profile", {
+          user_id: authUser.id,
+        })
+
+        if (!rpcError && profile) {
+          console.log("[AuthService] Profile fetched via RPC function")
+          return profile
+        } else {
+          console.warn("[AuthService] RPC function failed, trying direct query:", rpcError)
+        }
+      } catch (rpcError) {
+        console.warn("[AuthService] RPC function not available:", rpcError)
+      }
+
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("*")
@@ -466,31 +457,52 @@ export class AuthService {
 
       if (profileError) {
         console.error("[AuthService] Profile fetch error:", profileError)
+
+        if (profileError.message.includes("permission denied")) {
+          console.log("[AuthService] RLS blocking access, creating profile from auth metadata...")
+
+          try {
+            const { data: newProfile, error: createError } = await supabase.rpc("create_user_profile", {
+              user_id: authUser.id,
+              user_email: authUser.email || "",
+              user_username: authUser.user_metadata?.username || authUser.email?.split("@")[0] || "user",
+              user_full_name: authUser.user_metadata?.full_name || "User",
+            })
+
+            if (!createError && newProfile) {
+              console.log("[AuthService] Profile created via RPC function")
+              return newProfile
+            }
+          } catch (createRpcError) {
+            console.warn("[AuthService] Profile creation RPC failed:", createRpcError)
+          }
+        }
+
         return null
       }
 
       if (!profile) {
-        console.log("[AuthService] No profile found, creating one...")
+        console.log("[AuthService] No profile found, attempting to create one...")
 
-        const { data: newProfile, error: createError } = await supabase
-          .from("profiles")
-          .insert({
-            id: authUser.id,
-            username: authUser.user_metadata?.username || authUser.email?.split("@")[0] || "user",
-            full_name: authUser.user_metadata?.full_name || "User",
-            status: "online",
-            last_seen: new Date().toISOString(),
+        try {
+          const { data: newProfile, error: createError } = await supabase.rpc("create_user_profile", {
+            user_id: authUser.id,
+            user_email: authUser.email || "",
+            user_username: authUser.user_metadata?.username || authUser.email?.split("@")[0] || "user",
+            user_full_name: authUser.user_metadata?.full_name || "User",
           })
-          .select()
-          .single()
 
-        if (createError) {
-          console.error("[AuthService] Failed to create profile:", createError)
-          return null
+          if (!createError && newProfile) {
+            console.log("[AuthService] Profile created via RPC function")
+            return newProfile
+          } else {
+            console.warn("[AuthService] RPC profile creation failed:", createError)
+          }
+        } catch (createRpcError) {
+          console.warn("[AuthService] Profile creation RPC not available:", createRpcError)
         }
 
-        console.log("[AuthService] Profile created successfully")
-        return newProfile
+        return null
       }
 
       console.log("[AuthService] === GET CURRENT USER SUCCESS ===")
@@ -498,7 +510,6 @@ export class AuthService {
     } catch (error) {
       console.error("[AuthService] === GET CURRENT USER FAILED ===")
       console.error("[AuthService] Error:", error)
-      // Return null instead of throwing to handle gracefully
       return null
     }
   }
