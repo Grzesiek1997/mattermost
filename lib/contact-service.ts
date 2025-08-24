@@ -228,14 +228,13 @@ export class ContactService {
       }
 
       try {
-        const { data: requestId, error: rpcError } = await supabase.rpc("send_friend_request", {
-          sender_id: user.id,
+        const { data: result, error: rpcError } = await supabase.rpc("send_friend_request", {
           receiver_id: receiverId,
         })
 
-        if (!rpcError && requestId) {
-          console.log(`[ContactService] ✅ Invitation sent via RPC: ${requestId}`)
-          return { success: true, invitation: { id: requestId } }
+        if (!rpcError && result) {
+          console.log(`[ContactService] ✅ Invitation sent via RPC:`, result)
+          return { success: result.success, message: result.message }
         } else {
           console.warn("[ContactService] RPC failed, trying manual creation:", rpcError)
         }
@@ -243,6 +242,7 @@ export class ContactService {
         console.warn("[ContactService] RPC function not available, using manual creation")
       }
 
+      // Manual fallback
       const { data: existing, error: checkError } = await supabase
         .from("friend_requests")
         .select("id, status")
@@ -304,13 +304,13 @@ export class ContactService {
       }
 
       try {
-        const { data: success, error: rpcError } = await supabase.rpc("accept_friend_request", {
+        const { data: result, error: rpcError } = await supabase.rpc("accept_friend_request", {
           request_id: invitationId,
         })
 
-        if (!rpcError && success) {
-          console.log(`[ContactService] ✅ Invitation accepted via RPC: ${invitationId}`)
-          return { success: true }
+        if (!rpcError && result) {
+          console.log(`[ContactService] ✅ Invitation accepted via RPC:`, result)
+          return { success: result.success, message: result.message }
         } else {
           console.warn("[ContactService] RPC failed, trying manual acceptance:", rpcError)
         }
@@ -383,6 +383,20 @@ export class ContactService {
         throw new Error("Not authenticated")
       }
 
+      try {
+        const { data: result, error: rpcError } = await supabase.rpc("reject_friend_request", {
+          request_id: invitationId,
+        })
+
+        if (!rpcError && result) {
+          console.log(`[ContactService] ✅ Invitation rejected via RPC:`, result)
+          return { success: result.success, message: result.message }
+        }
+      } catch (rpcErr) {
+        console.warn("[ContactService] RPC function not available, using manual rejection")
+      }
+
+      // Manual fallback
       const { error } = await supabase
         .from("friend_requests")
         .update({ status: "rejected", updated_at: new Date().toISOString() })
@@ -516,31 +530,17 @@ export class ContactService {
         throw new Error("Not authenticated")
       }
 
-      try {
-        const { data: conversationId, error: rpcError } = await supabase.rpc("create_direct_conversation", {
-          user1_id: user.id,
-          user2_id: contactId,
-        })
-
-        if (!rpcError && conversationId) {
-          console.log(`[ContactService] ✅ Direct conversation ready via RPC: ${conversationId}`)
-          return { id: conversationId }
-        } else {
-          console.warn("[ContactService] RPC failed, trying manual creation:", rpcError)
-        }
-      } catch (rpcErr) {
-        console.warn("[ContactService] RPC function not available, using manual creation")
-      }
-
-      console.log("[ContactService] Creating conversation manually...")
-
+      // Check for existing direct conversation
       const { data: existingConversations, error: searchError } = await supabase
-        .from("conversations")
+        .from("conversation_participants")
         .select(`
-          id,
-          conversation_participants!inner(user_id)
+          conversation_id,
+          conversations!inner(
+            id, is_group, created_by
+          )
         `)
-        .eq("type", "direct")
+        .eq("user_id", user.id)
+        .eq("conversations.is_group", false)
 
       if (searchError) {
         console.error("[ContactService] Search existing conversations error:", searchError)
@@ -548,11 +548,18 @@ export class ContactService {
       }
 
       // Check if any existing conversation has both users
-      for (const conversation of existingConversations || []) {
-        const participantIds = conversation.conversation_participants.map((p: any) => p.user_id)
-        if (participantIds.includes(user.id) && participantIds.includes(contactId) && participantIds.length === 2) {
-          console.log(`[ContactService] ✅ Found existing direct conversation: ${conversation.id}`)
-          return { id: conversation.id }
+      for (const conv of existingConversations || []) {
+        const { data: participants, error: participantsError } = await supabase
+          .from("conversation_participants")
+          .select("user_id")
+          .eq("conversation_id", conv.conversation_id)
+
+        if (!participantsError && participants) {
+          const participantIds = participants.map((p) => p.user_id)
+          if (participantIds.includes(contactId) && participantIds.length === 2) {
+            console.log(`[ContactService] ✅ Found existing direct conversation: ${conv.conversation_id}`)
+            return { id: conv.conversation_id }
+          }
         }
       }
 
@@ -560,7 +567,7 @@ export class ContactService {
       const { data: newConversation, error: conversationError } = await supabase
         .from("conversations")
         .insert({
-          type: "direct",
+          is_group: false,
           created_by: user.id,
         })
         .select("id")
@@ -581,7 +588,7 @@ export class ContactService {
         throw participantsError
       }
 
-      console.log(`[ContactService] ✅ Direct conversation created manually: ${newConversation.id}`)
+      console.log(`[ContactService] ✅ Direct conversation created: ${newConversation.id}`)
       return { id: newConversation.id }
     } catch (error: any) {
       console.error("[ContactService] Start direct chat error:", error)

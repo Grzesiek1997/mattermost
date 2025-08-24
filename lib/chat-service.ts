@@ -1,4 +1,5 @@
 import { supabase, SUPABASE_READY } from "./supabase"
+import { realtimeService } from "./realtime-service"
 import type { Chat, Message } from "./supabase"
 
 export class ChatService {
@@ -27,18 +28,27 @@ export class ChatService {
     const { data, error } = await supabase
       .from("conversations")
       .insert({
-        type,
-        title,
+        name: title,
         description,
+        is_group: type === "group",
         created_by: user.id,
       })
       .select()
       .single()
 
     if (error) throw error
+
+    // Add creator as participant
+    await supabase.from("conversation_participants").insert({
+      conversation_id: data.id,
+      user_id: user.id,
+      role: "admin",
+    })
+
     return data
   }
 
+  // Get a user's chats
   static async getUserChats(userId: string) {
     if (!SUPABASE_READY) {
       console.log("[ChatService] Demo mode - returning empty chat list")
@@ -55,19 +65,6 @@ export class ChatService {
     } catch (error) {
       console.error("Get user chats error:", error)
       try {
-        const { data: participantData, error: participantError } = await supabase
-          .from("conversation_participants")
-          .select("conversation_id, joined_at")
-          .eq("user_id", userId)
-          .order("joined_at", { ascending: false })
-
-        if (participantError) throw participantError
-
-        if (!participantData || participantData.length === 0) {
-          return []
-        }
-
-        const conversationIds = participantData.map((p) => p.conversation_id)
         const { data: conversationsData, error: conversationsError } = await supabase
           .from("conversations")
           .select(`
@@ -75,24 +72,22 @@ export class ChatService {
             name,
             description,
             is_group,
-            is_direct,
+            avatar_url,
             created_by,
-            created_at,
-            updated_at
+            conversations.created_at,
+            conversations.updated_at,
+            conversation_participants!inner(
+              user_id,
+              role,
+              joined_at,
+              last_read_at
+            )
           `)
-          .in("id", conversationIds)
+          .eq("conversation_participants.user_id", userId)
+          .order("conversations.updated_at", { ascending: false })
 
         if (conversationsError) throw conversationsError
-
-        return participantData
-          .map((participant) => {
-            const conversation = conversationsData?.find((c) => c.id === participant.conversation_id)
-            return {
-              ...participant,
-              conversations: conversation,
-            }
-          })
-          .filter((item) => item.conversations)
+        return conversationsData || []
       } catch (fallbackError) {
         console.error("Fallback query also failed:", fallbackError)
         return []
@@ -112,15 +107,16 @@ export class ChatService {
         .from("messages")
         .select(`
           *,
-          user:sender_id (
+          sender:profiles!messages_sender_id_fkey (
             id, username, full_name, avatar_url, status
           ),
-          reply_to:reply_to_id (
-            id, content, user:sender_id (username, full_name)
+          reply_to:messages!messages_reply_to_id_fkey (
+            id, content, 
+            sender:profiles!messages_sender_id_fkey (username, full_name)
           ),
           reactions:message_reactions (
-            id, emoji, user_id,
-            user:user_id (username, full_name)
+            id, reaction, user_id,
+            user:profiles!message_reactions_user_id_fkey (username, full_name)
           )
         `)
         .eq("conversation_id", chatId)
@@ -151,14 +147,11 @@ export class ChatService {
       await new Promise((resolve) => setTimeout(resolve, 300))
       return {
         id: "demo-msg-" + Math.random().toString(36).slice(2),
-        chat_id: chatId,
-        user_id: "demo-user",
+        conversation_id: chatId,
+        sender_id: "demo-user",
         content,
         message_type: messageType,
         reply_to_id: replyToId,
-        file_url: fileUrl,
-        file_name: fileName,
-        file_size: fileSize,
         is_edited: false,
         is_deleted: false,
         created_at: new Date().toISOString(),
@@ -179,27 +172,36 @@ export class ChatService {
         content,
         message_type: messageType,
         reply_to_id: replyToId,
-        file_url: fileUrl,
-        file_name: fileName,
-        file_size: fileSize,
       })
       .select(`
         *,
-        user:sender_id (
+        sender:profiles!messages_sender_id_fkey (
           id, username, full_name, avatar_url, status
         ),
-        reply_to:reply_to_id (
-          id, content, user:sender_id (username, full_name)
+        reply_to:messages!messages_reply_to_id_fkey (
+          id, content, 
+          sender:profiles!messages_sender_id_fkey (username, full_name)
         )
       `)
       .single()
 
     if (error) throw error
+
+    if (fileUrl && fileName) {
+      await supabase.from("message_attachments").insert({
+        message_id: data.id,
+        file_name: fileName,
+        file_url: fileUrl,
+        file_type: messageType,
+        file_size: fileSize,
+      })
+    }
+
     return data
   }
 
   // Add reaction to message
-  static async addReaction(messageId: string, emoji: string) {
+  static async addReaction(messageId: string, reaction: string) {
     if (!SUPABASE_READY) {
       console.log("[ChatService] Demo mode - reaction added (mock)")
       await new Promise((resolve) => setTimeout(resolve, 200))
@@ -216,7 +218,7 @@ export class ChatService {
       .upsert({
         message_id: messageId,
         user_id: user.id,
-        emoji,
+        reaction,
       })
       .select()
       .single()
@@ -226,7 +228,7 @@ export class ChatService {
   }
 
   // Remove reaction from message
-  static async removeReaction(messageId: string, emoji: string) {
+  static async removeReaction(messageId: string, reaction: string) {
     if (!SUPABASE_READY) {
       return
     }
@@ -241,7 +243,7 @@ export class ChatService {
       .delete()
       .eq("message_id", messageId)
       .eq("user_id", user.id)
-      .eq("emoji", emoji)
+      .eq("reaction", reaction)
 
     if (error) throw error
   }
@@ -253,49 +255,27 @@ export class ChatService {
     }
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { error } = await supabase.from("typing_indicators").upsert({
-        conversation_id: chatId,
-        user_id: user.id,
-        is_typing: isTyping,
-        updated_at: new Date().toISOString(),
-      })
-
-      if (error) console.error("Update typing status error:", error)
+      await realtimeService.sendTypingIndicator(chatId, isTyping)
     } catch (error) {
       console.error("Update typing status error:", error)
     }
   }
 
-  // Get typing indicators for a chat
-  static async getTypingIndicators(chatId: string) {
-    if (!SUPABASE_READY) {
-      return []
-    }
+  static subscribeToConversation(
+    conversationId: string,
+    onMessage: (message: any) => void,
+    onTyping?: (users: any[]) => void,
+    onPresence?: (users: any[]) => void,
+  ) {
+    return realtimeService.subscribeToConversation(conversationId, onMessage, onTyping, onPresence)
+  }
 
-    try {
-      const { data, error } = await supabase
-        .from("typing_indicators")
-        .select(`
-          *,
-          user:user_id (
-            id, username, full_name
-          )
-        `)
-        .eq("conversation_id", chatId)
-        .eq("is_typing", true)
-        .gte("updated_at", new Date(Date.now() - 10000).toISOString()) // Last 10 seconds
+  static unsubscribeFromConversation(conversationId: string) {
+    realtimeService.unsubscribeFromConversation(conversationId)
+  }
 
-      if (error) throw error
-      return data || []
-    } catch (error) {
-      console.error("Get typing indicators error:", error)
-      return []
-    }
+  static async updatePresence(conversationId: string, status: "online" | "offline" | "away" | "busy") {
+    await realtimeService.updatePresence(conversationId, status)
   }
 
   // Mark messages as read
@@ -340,10 +320,10 @@ export class ChatService {
         .from("messages")
         .select(`
           *,
-          user:sender_id (
+          sender:profiles!messages_sender_id_fkey (
             id, username, full_name, avatar_url
           ),
-          conversations:conversation_id (
+          conversation:conversations!messages_conversation_id_fkey (
             id, name, is_group
           )
         `)
