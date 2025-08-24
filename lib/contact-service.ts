@@ -530,57 +530,72 @@ export class ContactService {
         throw new Error("Not authenticated")
       }
 
-      // Check for existing direct conversation
-      const { data: existingConversations, error: searchError } = await supabase
-        .from("conversation_participants")
+      try {
+        const { data: roomId, error: rpcError } = await supabase.rpc("create_direct_room", {
+          p_user_id: user.id,
+          p_friend_id: contactId,
+        })
+
+        if (!rpcError && roomId) {
+          console.log(`[ContactService] ✅ Direct room created/found: ${roomId}`)
+          return { id: roomId }
+        } else {
+          console.warn("[ContactService] RPC failed, trying manual creation:", rpcError)
+        }
+      } catch (rpcErr) {
+        console.warn("[ContactService] RPC function not available, using manual creation")
+      }
+
+      const { data: existingRooms, error: searchError } = await supabase
+        .from("room_participants")
         .select(`
-          conversation_id,
-          conversations!inner(
-            id, is_group, created_by
+          room_id,
+          rooms!inner(
+            id, type, creator_id
           )
         `)
         .eq("user_id", user.id)
-        .eq("conversations.is_group", false)
+        .eq("rooms.type", "private")
 
       if (searchError) {
-        console.error("[ContactService] Search existing conversations error:", searchError)
+        console.error("[ContactService] Search existing rooms error:", searchError)
         throw searchError
       }
 
-      // Check if any existing conversation has both users
-      for (const conv of existingConversations || []) {
+      // Check if any existing room has both users
+      for (const room of existingRooms || []) {
         const { data: participants, error: participantsError } = await supabase
-          .from("conversation_participants")
+          .from("room_participants")
           .select("user_id")
-          .eq("conversation_id", conv.conversation_id)
+          .eq("room_id", room.room_id)
 
         if (!participantsError && participants) {
           const participantIds = participants.map((p) => p.user_id)
           if (participantIds.includes(contactId) && participantIds.length === 2) {
-            console.log(`[ContactService] ✅ Found existing direct conversation: ${conv.conversation_id}`)
-            return { id: conv.conversation_id }
+            console.log(`[ContactService] ✅ Found existing direct room: ${room.room_id}`)
+            return { id: room.room_id }
           }
         }
       }
 
-      // Create new conversation
-      const { data: newConversation, error: conversationError } = await supabase
-        .from("conversations")
+      // Create new room
+      const { data: newRoom, error: roomError } = await supabase
+        .from("rooms")
         .insert({
-          is_group: false,
-          created_by: user.id,
+          type: "private",
+          creator_id: user.id,
         })
         .select("id")
         .single()
 
-      if (conversationError) {
-        console.error("[ContactService] Conversation creation error:", conversationError)
-        throw conversationError
+      if (roomError) {
+        console.error("[ContactService] Room creation error:", roomError)
+        throw roomError
       }
 
-      const { error: participantsError } = await supabase.from("conversation_participants").insert([
-        { conversation_id: newConversation.id, user_id: user.id, role: "member" },
-        { conversation_id: newConversation.id, user_id: contactId, role: "member" },
+      const { error: participantsError } = await supabase.from("room_participants").insert([
+        { room_id: newRoom.id, user_id: user.id, role: "member" },
+        { room_id: newRoom.id, user_id: contactId, role: "member" },
       ])
 
       if (participantsError) {
@@ -588,8 +603,8 @@ export class ContactService {
         throw participantsError
       }
 
-      console.log(`[ContactService] ✅ Direct conversation created: ${newConversation.id}`)
-      return { id: newConversation.id }
+      console.log(`[ContactService] ✅ Direct room created: ${newRoom.id}`)
+      return { id: newRoom.id }
     } catch (error: any) {
       console.error("[ContactService] Start direct chat error:", error)
       throw error

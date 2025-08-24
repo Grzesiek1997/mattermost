@@ -26,21 +26,20 @@ export class ChatService {
     if (!user) throw new Error("Not authenticated")
 
     const { data, error } = await supabase
-      .from("conversations")
+      .from("rooms")
       .insert({
         name: title,
         description,
-        is_group: type === "group",
-        created_by: user.id,
+        type: type === "group" ? "group" : "private",
+        creator_id: user.id,
       })
       .select()
       .single()
 
     if (error) throw error
 
-    // Add creator as participant
-    await supabase.from("conversation_participants").insert({
-      conversation_id: data.id,
+    await supabase.from("room_participants").insert({
+      room_id: data.id,
       user_id: user.id,
       role: "admin",
     })
@@ -56,7 +55,7 @@ export class ChatService {
     }
 
     try {
-      const { data, error } = await supabase.rpc("get_user_conversations", {
+      const { data, error } = await supabase.rpc("get_user_rooms", {
         p_user_id: userId,
       })
 
@@ -65,29 +64,28 @@ export class ChatService {
     } catch (error) {
       console.error("Get user chats error:", error)
       try {
-        const { data: conversationsData, error: conversationsError } = await supabase
-          .from("conversations")
+        const { data: roomsData, error: roomsError } = await supabase
+          .from("rooms")
           .select(`
             id,
             name,
             description,
-            is_group,
+            type,
             avatar_url,
-            created_by,
-            conversations.created_at,
-            conversations.updated_at,
-            conversation_participants!inner(
+            creator_id,
+            rooms.created_at,
+            rooms.updated_at,
+            room_participants!inner(
               user_id,
               role,
-              joined_at,
-              last_read_at
+              joined_at
             )
           `)
-          .eq("conversation_participants.user_id", userId)
-          .order("conversations.updated_at", { ascending: false })
+          .eq("room_participants.user_id", userId)
+          .order("rooms.updated_at", { ascending: false })
 
-        if (conversationsError) throw conversationsError
-        return conversationsData || []
+        if (roomsError) throw roomsError
+        return roomsData || []
       } catch (fallbackError) {
         console.error("Fallback query also failed:", fallbackError)
         return []
@@ -113,14 +111,9 @@ export class ChatService {
           reply_to:messages!messages_reply_to_id_fkey (
             id, content, 
             sender:profiles!messages_sender_id_fkey (username, full_name)
-          ),
-          reactions:message_reactions (
-            id, reaction, user_id,
-            user:profiles!message_reactions_user_id_fkey (username, full_name)
           )
         `)
-        .eq("conversation_id", chatId)
-        .eq("is_deleted", false)
+        .eq("room_id", chatId)
         .order("created_at", { ascending: false })
         .range(offset, offset + limit - 1)
 
@@ -147,15 +140,12 @@ export class ChatService {
       await new Promise((resolve) => setTimeout(resolve, 300))
       return {
         id: "demo-msg-" + Math.random().toString(36).slice(2),
-        conversation_id: chatId,
+        room_id: chatId,
         sender_id: "demo-user",
         content,
         message_type: messageType,
         reply_to_id: replyToId,
-        is_edited: false,
-        is_deleted: false,
         created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
       }
     }
 
@@ -167,7 +157,7 @@ export class ChatService {
     const { data, error } = await supabase
       .from("messages")
       .insert({
-        conversation_id: chatId,
+        room_id: chatId,
         sender_id: user.id,
         content,
         message_type: messageType,
@@ -186,16 +176,6 @@ export class ChatService {
       .single()
 
     if (error) throw error
-
-    if (fileUrl && fileName) {
-      await supabase.from("message_attachments").insert({
-        message_id: data.id,
-        file_name: fileName,
-        file_url: fileUrl,
-        file_type: messageType,
-        file_size: fileSize,
-      })
-    }
 
     return data
   }
@@ -249,33 +229,33 @@ export class ChatService {
   }
 
   // Update typing status
-  static async updateTypingStatus(chatId: string, isTyping: boolean) {
+  static async updateTypingStatus(roomId: string, isTyping: boolean) {
     if (!SUPABASE_READY) {
       return
     }
 
     try {
-      await realtimeService.sendTypingIndicator(chatId, isTyping)
+      await realtimeService.sendTypingIndicator(roomId, isTyping)
     } catch (error) {
       console.error("Update typing status error:", error)
     }
   }
 
   static subscribeToConversation(
-    conversationId: string,
+    roomId: string,
     onMessage: (message: any) => void,
     onTyping?: (users: any[]) => void,
     onPresence?: (users: any[]) => void,
   ) {
-    return realtimeService.subscribeToConversation(conversationId, onMessage, onTyping, onPresence)
+    return realtimeService.subscribeToConversation(roomId, onMessage, onTyping, onPresence)
   }
 
-  static unsubscribeFromConversation(conversationId: string) {
-    realtimeService.unsubscribeFromConversation(conversationId)
+  static unsubscribeFromConversation(roomId: string) {
+    realtimeService.unsubscribeFromConversation(roomId)
   }
 
-  static async updatePresence(conversationId: string, status: "online" | "offline" | "away" | "busy") {
-    await realtimeService.updatePresence(conversationId, status)
+  static async updatePresence(roomId: string, status: "online" | "offline" | "away" | "busy") {
+    await realtimeService.updatePresence(roomId, status)
   }
 
   // Mark messages as read
@@ -290,12 +270,13 @@ export class ChatService {
       } = await supabase.auth.getUser()
       if (!user) return
 
-      const reads = messageIds.map((messageId) => ({
+      const receipts = messageIds.map((messageId) => ({
         message_id: messageId,
         user_id: user.id,
+        status: "read" as const,
       }))
 
-      const { error } = await supabase.from("message_reads").upsert(reads)
+      const { error } = await supabase.from("message_receipts").upsert(receipts)
 
       if (error) console.error("Mark messages as read error:", error)
     } catch (error) {
