@@ -27,15 +27,16 @@ export class ContactService {
     try {
       console.log("[ContactService] Testing database connection...")
 
-      // First test basic connection
-      const { data, error } = await supabase.from("users").select("id, username, full_name").limit(1)
+      const { data, error } = await supabase.from("profiles").select("id, username, full_name").limit(1)
 
       if (error) {
         console.error("[ContactService] Connection test failed:", error)
 
         // Try a simpler query to diagnose the issue
         try {
-          const { data: simpleData, error: simpleError } = await supabase.from("users").select("count").limit(1)
+          const { count, error: simpleError } = await supabase
+            .from("profiles")
+            .select("*", { count: "exact", head: true })
           if (simpleError) {
             console.error("[ContactService] Simple query also failed:", simpleError)
           } else {
@@ -87,31 +88,45 @@ export class ContactService {
 
       console.log(`[ContactService] Current user: ${currentUser.id}`)
 
-      // Try using the custom function first with correct parameter name
       try {
-        const { data: functionData, error: functionError } = await supabase.rpc("get_searchable_users", {
-          search_term: query, // Fixed parameter name to match database function
+        const { data: functionData, error: functionError } = await supabase.rpc("search_users", {
+          search_term: query,
         })
 
         if (!functionError && functionData) {
           console.log(`[ContactService] Function search found ${functionData.length} users`)
 
-          // Get contact statuses for found users
           const userIds = functionData.map((u: any) => u.id) || []
           const contactStatuses: Record<string, string> = {}
 
           if (userIds.length > 0) {
-            const { data: contactData, error: contactError } = await supabase
-              .from("contacts")
-              .select("contact_user_id, user_id, status")
-              .or(
-                `and(user_id.eq.${currentUser.id},contact_user_id.in.(${userIds.join(",")})),and(contact_user_id.eq.${currentUser.id},user_id.in.(${userIds.join(",")}))`,
-              )
+            const { data: friendshipData, error: friendshipError } = await supabase
+              .from("friendships")
+              .select("user_id, friend_id")
+              .or(`user_id.eq.${currentUser.id},friend_id.eq.${currentUser.id}`)
+              .in("user_id", [...userIds, currentUser.id])
+              .in("friend_id", [...userIds, currentUser.id])
 
-            if (!contactError && contactData) {
-              contactData.forEach((contact: any) => {
-                const otherUserId = contact.user_id === currentUser.id ? contact.contact_user_id : contact.user_id
-                contactStatuses[otherUserId] = contact.status
+            const { data: requestData, error: requestError } = await supabase
+              .from("friend_requests")
+              .select("sender_id, receiver_id, status")
+              .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`)
+              .in("sender_id", [...userIds, currentUser.id])
+              .in("receiver_id", [...userIds, currentUser.id])
+
+            if (!friendshipError && friendshipData) {
+              friendshipData.forEach((friendship: any) => {
+                const otherUserId = friendship.user_id === currentUser.id ? friendship.friend_id : friendship.user_id
+                contactStatuses[otherUserId] = "accepted"
+              })
+            }
+
+            if (!requestError && requestData) {
+              requestData.forEach((request: any) => {
+                const otherUserId = request.sender_id === currentUser.id ? request.receiver_id : request.sender_id
+                if (!contactStatuses[otherUserId]) {
+                  contactStatuses[otherUserId] = request.status
+                }
               })
             }
           }
@@ -130,14 +145,13 @@ export class ContactService {
         console.warn("[ContactService] Function not available, using direct query")
       }
 
-      // Fallback to direct query
       const { data: directData, error: directError } = await supabase
-        .from("users")
+        .from("profiles")
         .select(`
-          id, email, username, full_name, avatar_url, bio, phone, 
-          is_online, last_seen, created_at, updated_at
+          id, username, full_name, avatar_url, bio, phone, 
+          status, last_seen, created_at, updated_at
         `)
-        .or(`username.ilike.%${query}%,full_name.ilike.%${query}%,email.ilike.%${query}%`)
+        .or(`username.ilike.%${query}%,full_name.ilike.%${query}%`)
         .neq("id", currentUser.id)
         .limit(limit)
 
@@ -148,22 +162,37 @@ export class ContactService {
 
       console.log(`[ContactService] Direct search found ${directData?.length || 0} users`)
 
-      // Get contact statuses for found users
       const userIds = directData?.map((u) => u.id) || []
       const contactStatuses: Record<string, string> = {}
 
       if (userIds.length > 0) {
-        const { data: contactData, error: contactError } = await supabase
-          .from("contacts")
-          .select("contact_user_id, user_id, status")
-          .or(
-            `and(user_id.eq.${currentUser.id},contact_user_id.in.(${userIds.join(",")})),and(contact_user_id.eq.${currentUser.id},user_id.in.(${userIds.join(",")}))`,
-          )
+        const { data: friendshipData, error: friendshipError } = await supabase
+          .from("friendships")
+          .select("user_id, friend_id")
+          .or(`user_id.eq.${currentUser.id},friend_id.eq.${currentUser.id}`)
+          .in("user_id", [...userIds, currentUser.id])
+          .in("friend_id", [...userIds, currentUser.id])
 
-        if (!contactError && contactData) {
-          contactData.forEach((contact: any) => {
-            const otherUserId = contact.user_id === currentUser.id ? contact.contact_user_id : contact.user_id
-            contactStatuses[otherUserId] = contact.status
+        const { data: requestData, error: requestError } = await supabase
+          .from("friend_requests")
+          .select("sender_id, receiver_id, status")
+          .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`)
+          .in("sender_id", [...userIds, currentUser.id])
+          .in("receiver_id", [...userIds, currentUser.id])
+
+        if (!friendshipError && friendshipData) {
+          friendshipData.forEach((friendship: any) => {
+            const otherUserId = friendship.user_id === currentUser.id ? friendship.friend_id : friendship.user_id
+            contactStatuses[otherUserId] = "accepted"
+          })
+        }
+
+        if (!requestError && requestData) {
+          requestData.forEach((request: any) => {
+            const otherUserId = request.sender_id === currentUser.id ? request.receiver_id : request.sender_id
+            if (!contactStatuses[otherUserId]) {
+              contactStatuses[otherUserId] = request.status
+            }
           })
         }
       }
@@ -171,6 +200,8 @@ export class ContactService {
       // Combine user data with contact statuses
       const results = (directData || []).map((user) => ({
         ...user,
+        is_online: user.status === "online",
+        email: "", // Add missing email field for compatibility
         contact_status: contactStatuses[user.id] || ("none" as const),
       }))
 
@@ -196,17 +227,32 @@ export class ContactService {
         throw new Error("Not authenticated")
       }
 
-      // Check if any relationship already exists
+      try {
+        const { data: requestId, error: rpcError } = await supabase.rpc("send_friend_request", {
+          sender_id: user.id,
+          receiver_id: receiverId,
+        })
+
+        if (!rpcError && requestId) {
+          console.log(`[ContactService] ✅ Invitation sent via RPC: ${requestId}`)
+          return { success: true, invitation: { id: requestId } }
+        } else {
+          console.warn("[ContactService] RPC failed, trying manual creation:", rpcError)
+        }
+      } catch (rpcErr) {
+        console.warn("[ContactService] RPC function not available, using manual creation")
+      }
+
       const { data: existing, error: checkError } = await supabase
-        .from("contacts")
-        .select("id, status, user_id, contact_user_id")
+        .from("friend_requests")
+        .select("id, status")
         .or(
-          `and(user_id.eq.${user.id},contact_user_id.eq.${receiverId}),and(user_id.eq.${receiverId},contact_user_id.eq.${user.id})`,
+          `and(sender_id.eq.${user.id},receiver_id.eq.${receiverId}),and(sender_id.eq.${receiverId},receiver_id.eq.${user.id})`,
         )
         .maybeSingle()
 
       if (checkError) {
-        console.error("[ContactService] Check existing contact error:", checkError)
+        console.error("[ContactService] Check existing request error:", checkError)
         throw checkError
       }
 
@@ -217,19 +263,15 @@ export class ContactService {
         if (existing.status === "accepted") {
           throw new Error("Already connected")
         }
-        if (existing.status === "blocked") {
-          throw new Error("Cannot send invitation")
-        }
       }
 
-      // Send invitation with correct timestamp field
+      // Send invitation
       const { data: newInvitation, error: insertError } = await supabase
-        .from("contacts")
+        .from("friend_requests")
         .insert({
-          user_id: user.id,
-          contact_user_id: receiverId,
+          sender_id: user.id,
+          receiver_id: receiverId,
           status: "pending",
-          created_at: new Date().toISOString(), // Use created_at instead of invited_at
         })
         .select()
         .single()
@@ -261,12 +303,27 @@ export class ContactService {
         throw new Error("Not authenticated")
       }
 
-      // Get the invitation details
+      try {
+        const { data: success, error: rpcError } = await supabase.rpc("accept_friend_request", {
+          request_id: invitationId,
+        })
+
+        if (!rpcError && success) {
+          console.log(`[ContactService] ✅ Invitation accepted via RPC: ${invitationId}`)
+          return { success: true }
+        } else {
+          console.warn("[ContactService] RPC failed, trying manual acceptance:", rpcError)
+        }
+      } catch (rpcErr) {
+        console.warn("[ContactService] RPC function not available, using manual acceptance")
+      }
+
+      // Manual fallback
       const { data: invitation, error: fetchError } = await supabase
-        .from("contacts")
-        .select("id, user_id, contact_user_id, status")
+        .from("friend_requests")
+        .select("id, sender_id, receiver_id, status")
         .eq("id", invitationId)
-        .eq("contact_user_id", user.id)
+        .eq("receiver_id", user.id)
         .eq("status", "pending")
         .single()
 
@@ -281,10 +338,10 @@ export class ContactService {
 
       // Update the invitation to accepted
       const { error: updateError } = await supabase
-        .from("contacts")
+        .from("friend_requests")
         .update({
           status: "accepted",
-          accepted_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         })
         .eq("id", invitationId)
 
@@ -293,22 +350,15 @@ export class ContactService {
         throw updateError
       }
 
-      // Create reverse relationship (mutual contact)
-      const { error: reverseError } = await supabase.from("contacts").upsert(
-        {
-          user_id: invitation.contact_user_id,
-          contact_user_id: invitation.user_id,
-          status: "accepted",
-          accepted_at: new Date().toISOString(),
-        },
-        {
-          onConflict: "user_id,contact_user_id",
-        },
-      )
+      // Create friendship (both directions)
+      const { error: friendshipError } = await supabase.from("friendships").insert([
+        { user_id: invitation.sender_id, friend_id: invitation.receiver_id },
+        { user_id: invitation.receiver_id, friend_id: invitation.sender_id },
+      ])
 
-      if (reverseError) {
-        console.error("[ContactService] Create reverse relationship error:", reverseError)
-        throw reverseError
+      if (friendshipError) {
+        console.error("[ContactService] Create friendship error:", friendshipError)
+        throw friendshipError
       }
 
       console.log(`[ContactService] ✅ Invitation accepted successfully: ${invitationId}`)
@@ -334,10 +384,10 @@ export class ContactService {
       }
 
       const { error } = await supabase
-        .from("contacts")
-        .delete()
+        .from("friend_requests")
+        .update({ status: "rejected", updated_at: new Date().toISOString() })
         .eq("id", invitationId)
-        .eq("contact_user_id", user.id)
+        .eq("receiver_id", user.id)
         .eq("status", "pending")
 
       if (error) {
@@ -369,16 +419,16 @@ export class ContactService {
       }
 
       const { data, error } = await supabase
-        .from("contacts")
+        .from("friend_requests")
         .select(`
           *,
-          inviter:users!contacts_user_id_fkey (
+          sender:profiles!friend_requests_sender_id_fkey (
             id, username, full_name, avatar_url
           )
         `)
-        .eq("contact_user_id", user.id)
+        .eq("receiver_id", user.id)
         .eq("status", "pending")
-        .order("created_at", { ascending: false }) // Use created_at instead of invited_at
+        .order("created_at", { ascending: false })
 
       if (error) {
         console.error("[ContactService] Get pending invitations error:", error)
@@ -387,10 +437,12 @@ export class ContactService {
 
       const invitations = (data || []).map((item: any) => ({
         ...item,
-        invited_at: item.created_at, // Map created_at to invited_at for compatibility
-        inviter_username: item.inviter?.username,
-        inviter_full_name: item.inviter?.full_name,
-        inviter_avatar_url: item.inviter?.avatar_url,
+        user_id: item.sender_id,
+        contact_user_id: item.receiver_id,
+        invited_at: item.created_at,
+        inviter_username: item.sender?.username,
+        inviter_full_name: item.sender?.full_name,
+        inviter_avatar_url: item.sender?.avatar_url,
       }))
 
       console.log(`[ContactService] ✅ Found ${invitations.length} pending invitations`)
@@ -417,30 +469,123 @@ export class ContactService {
       }
 
       const { data, error } = await supabase
-        .from("contacts")
+        .from("friendships")
         .select(`
-          contact_user_id,
-          accepted_at,
-          contact:contact_user_id (
-            id, email, username, full_name, avatar_url, bio, phone, 
-            is_online, last_seen, created_at, updated_at
+          friend_id,
+          created_at,
+          friend:profiles!friendships_friend_id_fkey (
+            id, username, full_name, avatar_url, bio, phone, 
+            status, last_seen, created_at, updated_at
           )
         `)
         .eq("user_id", user.id)
-        .eq("status", "accepted")
-        .order("accepted_at", { ascending: false })
+        .order("created_at", { ascending: false })
 
       if (error) {
         console.error("[ContactService] Get contacts error:", error)
         throw error
       }
 
-      const contacts = (data || []).map((item: any) => item.contact).filter(Boolean)
+      const contacts = (data || [])
+        .map((item: any) => ({
+          ...item.friend,
+          email: "", // Add missing email field for compatibility
+          is_online: item.friend?.status === "online",
+        }))
+        .filter(Boolean)
+
       console.log(`[ContactService] ✅ Found ${contacts.length} contacts`)
       return contacts
     } catch (error) {
       console.error("[ContactService] Get contacts error:", error)
       return []
+    }
+  }
+
+  // Start direct chat with contact
+  static async startDirectChat(contactId: string) {
+    console.log(`[ContactService] Starting direct chat with: ${contactId}`)
+
+    try {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser()
+
+      if (authError || !user) {
+        throw new Error("Not authenticated")
+      }
+
+      try {
+        const { data: conversationId, error: rpcError } = await supabase.rpc("create_direct_conversation", {
+          user1_id: user.id,
+          user2_id: contactId,
+        })
+
+        if (!rpcError && conversationId) {
+          console.log(`[ContactService] ✅ Direct conversation ready via RPC: ${conversationId}`)
+          return { id: conversationId }
+        } else {
+          console.warn("[ContactService] RPC failed, trying manual creation:", rpcError)
+        }
+      } catch (rpcErr) {
+        console.warn("[ContactService] RPC function not available, using manual creation")
+      }
+
+      console.log("[ContactService] Creating conversation manually...")
+
+      const { data: existingConversations, error: searchError } = await supabase
+        .from("conversations")
+        .select(`
+          id,
+          conversation_participants!inner(user_id)
+        `)
+        .eq("type", "direct")
+
+      if (searchError) {
+        console.error("[ContactService] Search existing conversations error:", searchError)
+        throw searchError
+      }
+
+      // Check if any existing conversation has both users
+      for (const conversation of existingConversations || []) {
+        const participantIds = conversation.conversation_participants.map((p: any) => p.user_id)
+        if (participantIds.includes(user.id) && participantIds.includes(contactId) && participantIds.length === 2) {
+          console.log(`[ContactService] ✅ Found existing direct conversation: ${conversation.id}`)
+          return { id: conversation.id }
+        }
+      }
+
+      // Create new conversation
+      const { data: newConversation, error: conversationError } = await supabase
+        .from("conversations")
+        .insert({
+          type: "direct",
+          created_by: user.id,
+        })
+        .select("id")
+        .single()
+
+      if (conversationError) {
+        console.error("[ContactService] Conversation creation error:", conversationError)
+        throw conversationError
+      }
+
+      const { error: participantsError } = await supabase.from("conversation_participants").insert([
+        { conversation_id: newConversation.id, user_id: user.id, role: "member" },
+        { conversation_id: newConversation.id, user_id: contactId, role: "member" },
+      ])
+
+      if (participantsError) {
+        console.error("[ContactService] Participants addition error:", participantsError)
+        throw participantsError
+      }
+
+      console.log(`[ContactService] ✅ Direct conversation created manually: ${newConversation.id}`)
+      return { id: newConversation.id }
+    } catch (error: any) {
+      console.error("[ContactService] Start direct chat error:", error)
+      throw error
     }
   }
 
@@ -511,95 +656,6 @@ export class ContactService {
       return { success: true }
     } catch (error: any) {
       console.error("[ContactService] Remove contact error:", error)
-      throw error
-    }
-  }
-
-  // Start direct chat with contact
-  static async startDirectChat(contactId: string) {
-    console.log(`[ContactService] Starting direct chat with: ${contactId}`)
-
-    try {
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser()
-
-      if (authError || !user) {
-        throw new Error("Not authenticated")
-      }
-
-      try {
-        const { data: chatId, error: rpcError } = await supabase.rpc("create_direct_chat_with_members", {
-          user1: user.id,
-          user2: contactId,
-        })
-
-        if (!rpcError && chatId) {
-          console.log(`[ContactService] ✅ Direct chat ready via RPC: ${chatId}`)
-          return { id: chatId }
-        } else {
-          console.warn("[ContactService] RPC failed, trying manual creation:", rpcError)
-        }
-      } catch (rpcErr) {
-        console.warn("[ContactService] RPC function not available, using manual creation")
-      }
-
-      console.log("[ContactService] Creating chat manually...")
-
-      // First check if direct chat already exists
-      const { data: existingChats, error: searchError } = await supabase
-        .from("chats")
-        .select(`
-          id,
-          chat_participants!inner(user_id)
-        `)
-        .eq("type", "direct")
-
-      if (searchError) {
-        console.error("[ContactService] Search existing chats error:", searchError)
-        throw searchError
-      }
-
-      // Check if any existing chat has both users
-      for (const chat of existingChats || []) {
-        const participantIds = chat.chat_participants.map((p: any) => p.user_id)
-        if (participantIds.includes(user.id) && participantIds.includes(contactId) && participantIds.length === 2) {
-          console.log(`[ContactService] ✅ Found existing direct chat: ${chat.id}`)
-          return { id: chat.id }
-        }
-      }
-
-      // Create new chat
-      const { data: newChat, error: chatError } = await supabase
-        .from("chats")
-        .insert({
-          name: null,
-          type: "direct",
-          created_by: user.id,
-        })
-        .select("id")
-        .single()
-
-      if (chatError) {
-        console.error("[ContactService] Chat creation error:", chatError)
-        throw chatError
-      }
-
-      const { error: membersError } = await supabase.from("chat_participants").insert([
-        { chat_id: newChat.id, user_id: user.id, role: "member" },
-        { chat_id: newChat.id, user_id: contactId, role: "member" },
-      ])
-
-      if (membersError) {
-        console.error("[ContactService] Members addition error:", membersError)
-        throw membersError
-      }
-
-      console.log(`[ContactService] ✅ Direct chat created manually: ${newChat.id}`)
-      return { id: newChat.id }
-    } catch (error: any) {
-      console.error("[ContactService] Start direct chat error:", error)
       throw error
     }
   }
